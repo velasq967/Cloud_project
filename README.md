@@ -167,20 +167,23 @@ Ver [docs/decisions.md](docs/decisions.md) para el detalle y los trade-offs.
 
 ## Ramas
 
-| Rama | Uso |
+`main` es la base estable de integración. Cada integrante trabaja en su rama personal:
+
+| Rama | Integrante |
 |---|---|
-| `main` | Entregable estable / integración |
-| `backend` | Trabajo de API, base de datos y tests |
-| `frontend` | Trabajo de interfaz y Nginx |
+| `main` | Base estable / integración |
+| `phanor` | Phanor |
+| `santiago` | Santiago |
+| `velasco` | Velasco |
 
 Flujo sugerido:
 
 ```powershell
-git switch backend
+git switch phanor
 # trabajar
 git add .
-git commit -m "backend: ..."
-git push -u origin backend
+git commit -m "phanor: ..."
+git push -u origin phanor
 ```
 
 Luego se integra a `main` con Pull Request.
