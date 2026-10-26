@@ -1,0 +1,35 @@
+name: warehouse-cloud-prod
+
+# Compose para EC2 + RDS (AWS).
+# No levanta PostgreSQL: la base es RDS.
+# Requiere un archivo .env en el servidor con DATABASE_URL, API_IMAGE y FRONTEND_IMAGE.
+
+services:
+  api:
+    image: ${API_IMAGE}
+    container_name: warehouse_api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      WAREHOUSE_ID: ${WAREHOUSE_ID:-WH-001}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8001:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  frontend:
+    image: ${FRONTEND_IMAGE}
+    container_name: warehouse_frontend
+    restart: unless-stopped
+    environment:
+      API_TARGET: api:8000
+    ports:
+      - "80:80"
+    depends_on:
+      api:
+        condition: service_healthy

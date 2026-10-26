@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Warehouse Cloud Platform — Fase 1</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <div class="brand">
+            <h1>📦 Warehouse Cloud Platform</h1>
+            <span id="warehouse-label" class="warehouse-label">WH-001</span>
+        </div>
+        <div id="health-status" class="status-badge loading">Conectando...</div>
+    </header>
+
+    <main class="dashboard-grid">
+        <section class="card">
+            <h2>Nuevo producto</h2>
+            <form id="product-form">
+                <div class="form-group">
+                    <label for="sku">SKU (único)</label>
+                    <input type="text" id="sku" required maxlength="50" placeholder="Ej: PROD-1001">
+                </div>
+                <div class="form-group">
+                    <label for="name">Nombre</label>
+                    <input type="text" id="name" required maxlength="150" placeholder="Ej: Caja de herramientas">
+                </div>
+                <div class="form-group">
+                    <label for="category">Categoría</label>
+                    <input type="text" id="category" maxlength="100" placeholder="Ej: Logística">
+                </div>
+                <div class="form-group">
+                    <label for="unit">Unidad</label>
+                    <input type="text" id="unit" required maxlength="20" placeholder="Ej: unit">
+                </div>
+                <div class="form-group">
+                    <label for="description">Descripción</label>
+                    <textarea id="description" maxlength="2000" placeholder="Detalles opcionales..."></textarea>
+                </div>
+                <button type="submit" class="btn-primary">Registrar e inicializar</button>
+            </form>
+        </section>
+
+        <section class="card">
+            <h2>Registrar movimiento</h2>
+            <form id="movement-form">
+                <div class="form-group">
+                    <label for="move-product-id">Producto</label>
+                    <select id="move-product-id" required>
+                        <option value="">Cargando productos...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="move-type">Tipo de operación</label>
+                    <select id="move-type" required>
+                        <option value="RECEIPT">RECEIPT — entrada</option>
+                        <option value="SHIPMENT">SHIPMENT — salida</option>
+                        <option value="RESERVATION">RESERVATION — reservar</option>
+                        <option value="RELEASE">RELEASE — liberar reserva</option>
+                        <option value="ADJUSTMENT">ADJUSTMENT — ajuste positivo</option>
+                        <option value="RETURN">RETURN — devolución</option>
+                        <option value="TRANSFER_IN">TRANSFER_IN — entrada por traslado</option>
+                        <option value="TRANSFER_OUT">TRANSFER_OUT — salida por traslado</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="move-quantity">Cantidad</label>
+                    <input type="number" id="move-quantity" min="1" required placeholder="Ej: 50">
+                </div>
+                <div class="form-group">
+                    <label for="move-reference">Referencia / guía</label>
+                    <input type="text" id="move-reference" maxlength="100" placeholder="Ej: REF-TRK-100">
+                </div>
+                <button type="submit" class="btn-secondary">Ejecutar transacción</button>
+            </form>
+        </section>
+
+        <section class="card wide">
+            <div class="card-header">
+                <h2>Inventario en tiempo real</h2>
+                <button id="refresh-stock-btn" class="btn-small" type="button">🔄 Actualizar</button>
+            </div>
+            <div class="table-container">
+                <table id="stock-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>SKU</th>
+                            <th>Producto</th>
+                            <th>Cantidad</th>
+                            <th>Reservado</th>
+                            <th>Disponible</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="7" class="muted">Cargando inventarios...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <div id="history-modal" class="modal" role="dialog" aria-modal="true">
+        <div class="modal-content">
+            <button class="close-modal" type="button" aria-label="Cerrar">&times;</button>
+            <h2 id="modal-title">Historial de movimientos</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Tipo</th>
+                            <th>Cantidad</th>
+                            <th>Referencia</th>
+                            <th>Fecha (local)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-table-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
