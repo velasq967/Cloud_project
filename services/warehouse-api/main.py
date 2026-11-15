@@ -25,8 +25,8 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     application = FastAPI(
         title=f"{settings.APP_NAME} — {settings.WAREHOUSE_ID}",
-        description="Fase 1: una bodega, API + PostgreSQL, inventario transaccional.",
-        version="1.1.0",
+        description="Fase 2: una bodega, Redis y Cache Aside.",
+        version="1.2.0",
         lifespan=lifespan,
     )
 

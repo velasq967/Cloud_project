@@ -2,6 +2,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.cache import cache_client
 from app.modules.inventory.inventory_service import InventoryService
 from app.modules.products.products_repository import ProductRepository
 from app.modules.products.schemas import ProductCreate, ProductUpdate
@@ -25,6 +26,7 @@ class ProductService:
             self.inventory_service.initialize_stock(product.id)
             self.db.commit()
             self.db.refresh(product)
+            cache_client.delete_inventory(product.id)
             return product
         except HTTPException:
             self.db.rollback()
@@ -79,6 +81,7 @@ class ProductService:
         try:
             self.product_repo.delete(product)
             self.db.commit()
+            cache_client.delete_inventory(product_id)
         except Exception as exc:
             self.db.rollback()
             raise HTTPException(

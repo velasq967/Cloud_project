@@ -47,5 +47,9 @@ class InventoryResponse(BaseModel):
     reserved_quantity: int
     available_quantity: int
     updated_at: datetime
+    source: str = Field(
+        "database",
+        description="Origen de la lectura: 'cache' o 'database'.",
+    )
 
     model_config = ConfigDict(from_attributes=True)

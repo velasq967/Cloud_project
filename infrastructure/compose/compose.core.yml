@@ -23,6 +23,28 @@ services:
       timeout: 5s
       retries: 12
 
+  redis:
+    image: redis:7-alpine
+    container_name: warehouse_redis
+    restart: unless-stopped
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "no",
+        "--maxmemory",
+        "128mb",
+        "--maxmemory-policy",
+        "allkeys-lru",
+      ]
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
   api:
     build:
       context: ../..
@@ -35,11 +57,16 @@ services:
       WAREHOUSE_NAME: ${WAREHOUSE_NAME:-Bodega principal}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       SEED_ON_START: ${SEED_ON_START:-true}
+      CACHE_ENABLED: ${CACHE_ENABLED:-true}
+      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-30}
+      REDIS_URL: redis://redis:6379/0
     ports:
       - "${BE_PORT:-8001}:8000"
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
     healthcheck:
       test:
         [

@@ -8,6 +8,9 @@ class WarehouseSettings(CommonSettings):
     DATABASE_URL: str = (
         "postgresql://warehouse_user:warehouse_pass@localhost:5433/warehouse_db"
     )
+    REDIS_URL: str = "redis://localhost:6380/0"
+    CACHE_ENABLED: bool = False
+    CACHE_TTL_SECONDS: int = 30
     SEED_ON_START: bool = False
 
     @property

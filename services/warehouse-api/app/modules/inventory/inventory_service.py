@@ -1,10 +1,13 @@
 import logging
+import time
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.cache import cache_client
 from app.config import settings
 from app.correlation import get_correlation_id
+from app.metrics import INVENTORY_READ_LATENCY
 from app.modules.inventory.inventory_repository import InventoryRepository
 from app.modules.inventory.schemas import InventoryResponse, MovementCreate, MovementType
 from app.modules.products.products_repository import ProductRepository
@@ -22,6 +25,17 @@ class InventoryService:
         self.repo.initialize_inventory(product_id)
 
     def get_stock(self, product_id: int) -> InventoryResponse:
+        started = time.perf_counter()
+        key = cache_client.inventory_key(product_id)
+        cached = cache_client.get_json(key)
+
+        if cached:
+            cached["source"] = "cache"
+            INVENTORY_READ_LATENCY.labels(
+                warehouse_id=settings.WAREHOUSE_ID, source="cache"
+            ).observe(time.perf_counter() - started)
+            return InventoryResponse(**cached)
+
         product = self.product_repo.get_by_id(product_id)
         if not product:
             raise HTTPException(
@@ -31,23 +45,31 @@ class InventoryService:
 
         inventory = self.repo.get_by_product(product_id)
         if not inventory:
-            return InventoryResponse(
+            response = InventoryResponse(
                 product_id=product_id,
                 warehouse_id=settings.WAREHOUSE_ID,
                 quantity=0,
                 reserved_quantity=0,
                 available_quantity=0,
                 updated_at=product.updated_at,
+                source="database",
+            )
+        else:
+            response = InventoryResponse(
+                product_id=inventory.product_id,
+                warehouse_id=inventory.warehouse_id,
+                quantity=inventory.quantity,
+                reserved_quantity=inventory.reserved_quantity,
+                available_quantity=inventory.quantity - inventory.reserved_quantity,
+                updated_at=inventory.updated_at,
+                source="database",
             )
 
-        return InventoryResponse(
-            product_id=inventory.product_id,
-            warehouse_id=inventory.warehouse_id,
-            quantity=inventory.quantity,
-            reserved_quantity=inventory.reserved_quantity,
-            available_quantity=inventory.quantity - inventory.reserved_quantity,
-            updated_at=inventory.updated_at,
-        )
+        cache_client.set_json(key, response.model_dump(mode="json"))
+        INVENTORY_READ_LATENCY.labels(
+            warehouse_id=settings.WAREHOUSE_ID, source="database"
+        ).observe(time.perf_counter() - started)
+        return response
 
     def process_movement(self, movement_in: MovementCreate):
         try:
@@ -132,6 +154,8 @@ class InventoryService:
 
             self.db.commit()
             self.db.refresh(movement)
+
+            cache_client.delete_inventory(movement_in.product_id)
 
             logger.info(
                 "inventory_movement_processed",

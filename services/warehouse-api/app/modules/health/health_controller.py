@@ -1,10 +1,12 @@
 import logging
 
 from fastapi import APIRouter, Depends, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.cache import cache_client
 from app.config import settings
 from app.database import get_db
 
@@ -14,6 +16,8 @@ logger = logging.getLogger("warehouse.health")
 
 @router.get("/health")
 def health_check(db: Session = Depends(get_db)):
+    redis_status = cache_client.ping()
+
     try:
         db.execute(text("SELECT 1"))
     except Exception:
@@ -23,12 +27,20 @@ def health_check(db: Session = Depends(get_db)):
             content={
                 "status": "degraded",
                 "database": "down",
+                "redis": redis_status,
                 "warehouse_id": settings.WAREHOUSE_ID,
             },
         )
 
+    # Redis caído no hace fallar la API: solo se pierde la caché.
     return {
         "status": "ok",
         "database": "ok",
+        "redis": redis_status,
         "warehouse_id": settings.WAREHOUSE_ID,
     }
+
+
+@router.get("/metrics", include_in_schema=False)
+def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
