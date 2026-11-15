@@ -11,6 +11,9 @@ class WarehouseSettings(CommonSettings):
     REDIS_URL: str = "redis://localhost:6380/0"
     CACHE_ENABLED: bool = False
     CACHE_TTL_SECONDS: int = 30
+    RABBITMQ_ENABLED: bool = False
+    RABBITMQ_URL: str = "amqp://warehouse:warehouse_pass@localhost:5672/%2F"
+    RABBITMQ_EXCHANGE: str = "warehouse.events"
     SEED_ON_START: bool = False
 
     @property

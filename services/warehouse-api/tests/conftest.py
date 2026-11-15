@@ -20,11 +20,11 @@ os.environ["WAREHOUSE_ID"] = "WH-TEST"
 os.environ["LOG_LEVEL"] = "WARNING"
 os.environ["SEED_ON_START"] = "false"
 os.environ["CACHE_ENABLED"] = "false"
+os.environ["RABBITMQ_ENABLED"] = "false"
 
 import pytest
-from fastapi.testclient import TestClient
-
 from app.database import Base, engine
+from fastapi.testclient import TestClient
 from main import app
 
 

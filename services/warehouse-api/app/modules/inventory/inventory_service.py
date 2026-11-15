@@ -3,6 +3,7 @@ import time
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
+from warehouse_common.events import EventTypes
 
 from app.cache import cache_client
 from app.config import settings
@@ -11,6 +12,7 @@ from app.metrics import INVENTORY_READ_LATENCY
 from app.modules.inventory.inventory_repository import InventoryRepository
 from app.modules.inventory.schemas import InventoryResponse, MovementCreate, MovementType
 from app.modules.products.products_repository import ProductRepository
+from app.publisher import publisher
 
 logger = logging.getLogger("warehouse.inventory")
 
@@ -30,6 +32,8 @@ class InventoryService:
         cached = cache_client.get_json(key)
 
         if cached:
+            # La caché solo se invalida desde esta API o desde el cache worker.
+            # Si el producto se elimina, la clave se borra explícitamente.
             cached["source"] = "cache"
             INVENTORY_READ_LATENCY.labels(
                 warehouse_id=settings.WAREHOUSE_ID, source="cache"
@@ -45,6 +49,8 @@ class InventoryService:
 
         inventory = self.repo.get_by_product(product_id)
         if not inventory:
+            # Un producto recién creado siempre tiene inventario, pero se
+            # devuelve un saldo en cero si por alguna razón no existe.
             response = InventoryResponse(
                 product_id=product_id,
                 warehouse_id=settings.WAREHOUSE_ID,
@@ -152,10 +158,41 @@ class InventoryService:
                 correlation_id=get_correlation_id(),
             )
 
+            # Inventario y movimiento se confirman en la misma transacción.
             self.db.commit()
             self.db.refresh(movement)
 
+            # Invalidación síncrona: si el commit fue exitoso, la siguiente
+            # lectura debe venir de PostgreSQL, no de un valor viejo en Redis.
             cache_client.delete_inventory(movement_in.product_id)
+
+            # Eventos de dominio. Si RabbitMQ está caído, la API no falla:
+            # en Fase 10 se agrega Outbox para publicación confiable.
+            correlation_id = get_correlation_id()
+            event_payload = {
+                "warehouse_id": settings.WAREHOUSE_ID,
+                "product_id": movement_in.product_id,
+                "movement_id": movement.id,
+                "movement_type": movement_type.value,
+                "quantity": quantity,
+                "resulting_quantity": new_quantity,
+                "resulting_reserved": new_reserved,
+            }
+            publisher.publish_many(
+                [
+                    (EventTypes.INVENTORY_MOVEMENT_REGISTERED, event_payload),
+                    (
+                        EventTypes.INVENTORY_UPDATED,
+                        {
+                            "warehouse_id": settings.WAREHOUSE_ID,
+                            "product_id": movement_in.product_id,
+                            "quantity": new_quantity,
+                            "reserved_quantity": new_reserved,
+                        },
+                    ),
+                ],
+                correlation_id,
+            )
 
             logger.info(
                 "inventory_movement_processed",

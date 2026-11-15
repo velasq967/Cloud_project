@@ -1,14 +1,14 @@
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
-
 from app.config import settings
 from app.database import Base
 
 # Importar los modelos registra las tablas en Base.metadata.
 from app.modules.inventory import models as inventory_models  # noqa: F401
 from app.modules.products import models as product_models  # noqa: F401
+from app.modules.reports import models as report_models  # noqa: F401
+from sqlalchemy import engine_from_config, pool
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
