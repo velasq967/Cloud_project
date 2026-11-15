@@ -1,0 +1,16 @@
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.coverage
+htmlcov
+.env
+*.db
+*.sqlite3
+node_modules
+.terraform
+*.tfstate
+docs/evidencias
