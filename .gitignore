@@ -1,44 +1,44 @@
-# Entorno
+# Entornos y secretos
 .env
 .env.*
 !.env.example
+*.pem
+*.key
 
 # Python
 __pycache__/
 *.py[cod]
-*.egg-info/
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
 .venv/
 venv/
-env/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-htmlcov/
-.coverage
-
-# Node (si más adelante se usa React)
-node_modules/
 dist/
 build/
+*.egg-info/
 
-# Bases de datos y volúmenes locales
+# Base de datos local de tests
 *.db
 *.sqlite3
-pgdata/
-postgres_data/
 
-# AWS y secretos
-*.pem
-*.key
-.aws/
-credentials
+# Node (por si se agrega tooling)
+node_modules/
 
-# IDE / sistema
-.idea/
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+override.tf
+override.tf.json
+
+# IDE / SO
 .vscode/
+.idea/
 .DS_Store
 Thumbs.db
 
-# Logs
+# Evidencias pesadas / temporales
 *.log
-logs/
+tmp/

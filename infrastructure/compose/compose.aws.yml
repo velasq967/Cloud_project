@@ -1,0 +1,49 @@
+name: warehouse-cloud-aws
+
+# Despliegue de la Fase 1 en una EC2 con RDS.
+# Las imágenes se construyen y suben a ECR desde la máquina local.
+# Uso:
+#   docker compose --env-file .env.aws -f infrastructure/compose/compose.aws.yml up -d
+
+services:
+  api:
+    image: ${API_IMAGE}
+    container_name: warehouse_api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      WAREHOUSE_ID: ${WAREHOUSE_ID:-WH-001}
+      WAREHOUSE_NAME: ${WAREHOUSE_NAME:-Bodega principal}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SEED_ON_START: ${SEED_ON_START:-false}
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+
+  frontend:
+    image: ${FRONTEND_IMAGE}
+    container_name: warehouse_frontend
+    restart: unless-stopped
+    environment:
+      API_TARGET: api:8000
+    ports:
+      - "80:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

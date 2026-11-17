@@ -1,0 +1,162 @@
+name: warehouse-cloud
+
+x-worker-base: &worker-base
+  build:
+    context: ../..
+    dockerfile: services/workers/Dockerfile
+  restart: unless-stopped
+  environment:
+    DATABASE_URL: postgresql://${POSTGRES_USER:-warehouse_user}:${POSTGRES_PASSWORD:-warehouse_pass}@postgres:5432/${POSTGRES_DB:-warehouse_db}
+    WAREHOUSE_ID: ${WAREHOUSE_ID:-WH-001}
+    LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    REDIS_URL: redis://redis:6379/0
+    RABBITMQ_URL: amqp://${RABBITMQ_USER:-warehouse}:${RABBITMQ_PASSWORD:-warehouse_pass}@rabbitmq:5672/%2F
+    RABBITMQ_EXCHANGE: warehouse.events
+  depends_on:
+    postgres:
+      condition: service_healthy
+    rabbitmq:
+      condition: service_healthy
+    api:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: warehouse_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-warehouse_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-warehouse_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-warehouse_db}
+    ports:
+      - "${DB_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-warehouse_user} -d ${POSTGRES_DB:-warehouse_db}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    container_name: warehouse_redis
+    restart: unless-stopped
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "no",
+        "--maxmemory",
+        "128mb",
+        "--maxmemory-policy",
+        "allkeys-lru",
+      ]
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: warehouse_rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-warehouse}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-warehouse_pass}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build:
+      context: ../..
+      dockerfile: services/warehouse-api/Dockerfile
+    container_name: warehouse_api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-warehouse_user}:${POSTGRES_PASSWORD:-warehouse_pass}@postgres:5432/${POSTGRES_DB:-warehouse_db}
+      WAREHOUSE_ID: ${WAREHOUSE_ID:-WH-001}
+      WAREHOUSE_NAME: ${WAREHOUSE_NAME:-Bodega principal}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SEED_ON_START: ${SEED_ON_START:-true}
+      CACHE_ENABLED: ${CACHE_ENABLED:-true}
+      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-30}
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_ENABLED: ${RABBITMQ_ENABLED:-true}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-warehouse}:${RABBITMQ_PASSWORD:-warehouse_pass}@rabbitmq:5672/%2F
+      RABBITMQ_EXCHANGE: warehouse.events
+    ports:
+      - "${BE_PORT:-8001}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  audit-worker:
+    <<: *worker-base
+    container_name: warehouse_audit_worker
+    command: ["python", "-m", "audit_worker.main"]
+
+  cache-worker:
+    <<: *worker-base
+    container_name: warehouse_cache_worker
+    command: ["python", "-m", "cache_worker.main"]
+
+  report-worker:
+    <<: *worker-base
+    container_name: warehouse_report_worker
+    command: ["python", "-m", "report_worker.main"]
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: services/frontend/app/Dockerfile
+    container_name: warehouse_frontend
+    restart: unless-stopped
+    environment:
+      API_TARGET: api:8000
+    ports:
+      - "${FE_PORT:-8081}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
