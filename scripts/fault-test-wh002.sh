@@ -4,12 +4,20 @@
 set -uo pipefail
 
 COMPOSE="docker compose --env-file .env -f infrastructure/compose/compose.multi.yml"
-declare -A API=( [WH-001]="http://localhost:8001" [WH-002]="http://localhost:8002" [WH-003]="http://localhost:8003" )
+# sin declare -A porque el bash de mac (3.2) no lo soporta
+api_url() {
+  case "$1" in
+    WH-001) echo "http://localhost:8001" ;;
+    WH-002) echo "http://localhost:8002" ;;
+    WH-003) echo "http://localhost:8003" ;;
+  esac
+}
 
 step() { printf "\n==> %s\n" "$1"; }
 
 check() {
-  local wh="$1" url="${API[$1]}"
+  local wh="$1" url
+  url="$(api_url "$1")"
   local code
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$url/health")"
   printf "%-7s /health -> %s\n" "$wh" "$code"
@@ -17,7 +25,8 @@ check() {
 }
 
 movement() {
-  local wh="$1" url="${API[$1]}"
+  local wh="$1" url
+  url="$(api_url "$1")"
   local code
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 -X POST "$url/inventory/movements" \
     -H 'Content-Type: application/json' \
