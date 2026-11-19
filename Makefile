@@ -1,4 +1,4 @@
-.PHONY: up down logs test smoke lint build clean up-multi down-multi ps-multi fault-wh002 load-multi clean-multi lb-test wh002-1 wh002-3 load-lb
+.PHONY: up down logs test smoke lint build clean up-multi down-multi ps-multi fault-wh002 load-multi clean-multi lb-test wh002-1 wh002-3 load-lb saga-test logs-saga
 
 COMPOSE = docker compose --env-file .env -f infrastructure/compose/compose.core.yml
 COMPOSE_MULTI = docker compose --env-file .env -f infrastructure/compose/compose.multi.yml
@@ -61,3 +61,10 @@ wh002-3:
 
 load-lb:
 	$(K6) -e RATE=$${RATE:-200} -e WH2=http://wh002-lb /load-tests/k6/phase5-wh002.js
+
+# fase 6
+saga-test:
+	bash scripts/saga-test.sh
+
+logs-saga:
+	$(COMPOSE_MULTI) logs -f central-api transfer-worker

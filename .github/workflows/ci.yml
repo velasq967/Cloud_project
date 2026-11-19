@@ -40,3 +40,6 @@ jobs:
 
       - name: Build Frontend
         run: docker build -f services/frontend/app/Dockerfile -t warehouse-frontend:ci .
+
+      - name: Build Central
+        run: docker build -f services/central/Dockerfile -t warehouse-central:ci .
