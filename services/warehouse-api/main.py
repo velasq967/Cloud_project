@@ -7,6 +7,7 @@ from app.config import settings
 from app.correlation import CorrelationIdMiddleware
 from app.logging_config import configure_logging
 from app.modules.health.health_controller import router as health_router
+from app.modules.inventory.inventory_controller import internal_router as internal_inventory_router
 from app.modules.inventory.inventory_controller import router as inventory_router
 from app.modules.products.products_controller import router as products_router
 from app.modules.reports.reports_controller import router as reports_router
@@ -60,6 +61,7 @@ def create_app() -> FastAPI:
     application.include_router(inventory_router)
     application.include_router(reports_router)
     application.include_router(transfers_router)
+    application.include_router(internal_inventory_router)
 
     @application.get("/", include_in_schema=False)
     def root():

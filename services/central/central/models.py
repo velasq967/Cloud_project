@@ -31,3 +31,17 @@ class TransferHistory(Base):
     status = Column(String(30), nullable=False)
     detail = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class GlobalInventory(Base):
+    # read model (fase 7): ultimo stock conocido de cada sku en cada bodega
+    __tablename__ = "global_inventory"
+
+    warehouse_id = Column(String(20), primary_key=True)
+    sku = Column(String(50), primary_key=True)
+    quantity = Column(Integer, nullable=False)
+    reserved_quantity = Column(Integer, nullable=False, default=0)
+    last_event_id = Column(String(100))
+    last_event_at = Column(DateTime(timezone=True), nullable=False)
+    projected_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    lag_ms = Column(Integer)

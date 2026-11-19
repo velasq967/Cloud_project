@@ -45,6 +45,7 @@ PostgreSQL
 | 4 · Múltiples bodegas | ✅ | [docs/fase-4-multiples-bodegas.md](docs/fase-4-multiples-bodegas.md) |
 | 5 · Load balancing | ✅ | [docs/fase-5-load-balancing.md](docs/fase-5-load-balancing.md) |
 | 6 · Transferencias y Saga | ✅ | [docs/fase-6-transferencias-saga.md](docs/fase-6-transferencias-saga.md) |
+| 7 · Central y CQRS | ✅ | [docs/fase-7-central-cqrs.md](docs/fase-7-central-cqrs.md) |
 
 ### Fase 4
 
@@ -71,6 +72,15 @@ make logs-saga     # logs del orquestador
 ```
 
 API central de transferencias: http://localhost:8010/docs
+
+### Fase 7
+
+```bash
+make cqrs-test     # compara read model (CQRS) vs consulta en vivo
+make load-cqrs     # carga con k6 a las dos alternativas
+```
+
+Inventario global: http://localhost:8010/global/inventory/PROD-001
 
 ## Estructura
 

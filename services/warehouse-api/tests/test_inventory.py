@@ -156,3 +156,20 @@ def test_delete_product(client, product):
 def test_invalid_movement_type_is_rejected(client, product):
     response = movement(client, product["id"], "INVALID", 1)
     assert response.status_code == 422
+
+
+def test_inventario_interno_por_sku(client, product):
+    movement(client, product["id"], "RECEIPT", 15)
+
+    r = client.get("/internal/inventory", params={"sku": product["sku"]})
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data) == 1
+    assert data[0]["sku"] == product["sku"]
+    assert data[0]["quantity"] == 15
+    assert data[0]["warehouse_id"] == "WH-TEST"
+
+
+def test_inventario_interno_sku_inexistente(client, product):
+    r = client.get("/internal/inventory", params={"sku": "NO-EXISTE"})
+    assert r.json() == []

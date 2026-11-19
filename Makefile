@@ -1,4 +1,4 @@
-.PHONY: up down logs test smoke lint build clean up-multi down-multi ps-multi fault-wh002 load-multi clean-multi lb-test wh002-1 wh002-3 load-lb saga-test logs-saga
+.PHONY: up down logs test smoke lint build clean up-multi down-multi ps-multi fault-wh002 load-multi clean-multi lb-test wh002-1 wh002-3 load-lb saga-test logs-saga cqrs-test load-cqrs
 
 COMPOSE = docker compose --env-file .env -f infrastructure/compose/compose.core.yml
 COMPOSE_MULTI = docker compose --env-file .env -f infrastructure/compose/compose.multi.yml
@@ -68,3 +68,10 @@ saga-test:
 
 logs-saga:
 	$(COMPOSE_MULTI) logs -f central-api transfer-worker
+
+# fase 7
+cqrs-test:
+	bash scripts/cqrs-test.sh
+
+load-cqrs:
+	$(K6) -e RATE=$${RATE:-50} -e CENTRAL=http://central-api:8000 /load-tests/k6/phase7-cqrs.js

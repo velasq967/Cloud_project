@@ -1,8 +1,11 @@
+import asyncio
 import logging
 import re
+import time
 from contextlib import asynccontextmanager
 from typing import Optional
 
+import httpx
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -11,6 +14,8 @@ from central.config import settings
 from central.database import SessionLocal, init_db
 from central.messaging import publish_transfer
 from central.models import Transfer, TransferHistory
+from central.projection import aggregate
+from central.read_model import all_skus, in_transit, rebuild, rows_for
 from central.saga import REQUESTED, SIMULATIONS, TERMINAL
 
 logging.basicConfig(level=settings.LOG_LEVEL, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -147,3 +152,89 @@ def summary(t: Transfer) -> dict:
         "created_at": t.created_at.isoformat() if t.created_at else None,
         "updated_at": t.updated_at.isoformat() if t.updated_at else None,
     }
+
+
+# ---------------- fase 7: inventario global ----------------
+
+
+@app.get("/global/inventory")
+def global_inventory_all():
+    """Resumen de todos los sku desde el read model."""
+    with SessionLocal() as db:
+        result = []
+        for sku in all_skus(db):
+            data = aggregate(sku, rows_for(db, sku), in_transit(db, sku))
+            del data["warehouses"]
+            result.append(data)
+        return result
+
+
+@app.get("/global/inventory/{sku}")
+def global_inventory(sku: str):
+    """Alternativa B (CQRS): responde desde el read model, sin llamar a las bodegas."""
+    started = time.perf_counter()
+    with SessionLocal() as db:
+        rows = rows_for(db, sku)
+        if not rows:
+            raise HTTPException(status_code=404, detail=f"No hay datos de {sku} en el read model.")
+        data = aggregate(sku, rows, in_transit(db, sku))
+    data["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 1)
+    return data
+
+
+async def _fetch_live(client, wh, url, sku):
+    try:
+        r = await client.get(f"{url}/internal/inventory", params={"sku": sku})
+        r.raise_for_status()
+        return wh, r.json(), None
+    except httpx.TimeoutException:
+        return wh, None, "timeout"
+    except Exception as exc:
+        return wh, None, f"{exc.__class__.__name__}"
+
+
+@app.get("/global/inventory-live/{sku}")
+async def global_inventory_live(sku: str):
+    """Alternativa A: le pregunta a todas las bodegas en paralelo en cada request."""
+    started = time.perf_counter()
+    whs = settings.warehouses
+    async with httpx.AsyncClient(timeout=settings.LIVE_TIMEOUT) as client:
+        results = await asyncio.gather(*(_fetch_live(client, wh, url, sku) for wh, url in whs.items()))
+
+    warehouses, errors = [], []
+    for wh, items, error in results:
+        if error:
+            errors.append({"warehouse_id": wh, "error": error})
+            continue
+        for item in items:
+            warehouses.append(
+                {
+                    "warehouse_id": wh,
+                    "quantity": item["quantity"],
+                    "reserved_quantity": item["reserved_quantity"],
+                    "available_quantity": item["available_quantity"],
+                }
+            )
+    if not warehouses and errors:
+        raise HTTPException(status_code=503, detail={"sku": sku, "errors": errors})
+
+    total = sum(w["quantity"] for w in warehouses)
+    reserved = sum(w["reserved_quantity"] for w in warehouses)
+    return {
+        "sku": sku,
+        "source": "live",
+        "complete": not errors,
+        "total_quantity": total,
+        "total_reserved": reserved,
+        "total_available": total - reserved,
+        "warehouses": sorted(warehouses, key=lambda w: w["warehouse_id"]),
+        "errors": errors,
+        "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
+    }
+
+
+@app.post("/global/rebuild")
+def global_rebuild():
+    """Reconstruye el read model con una foto del inventario de cada bodega."""
+    with SessionLocal() as db:
+        return {"result": rebuild(db)}

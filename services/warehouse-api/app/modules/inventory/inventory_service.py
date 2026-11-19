@@ -186,6 +186,8 @@ class InventoryService:
                         {
                             "warehouse_id": settings.WAREHOUSE_ID,
                             "product_id": movement_in.product_id,
+                            # el sku es igual en todas las bodegas, el product_id no (fase 7)
+                            "sku": product.sku,
                             "quantity": new_quantity,
                             "reserved_quantity": new_reserved,
                         },
