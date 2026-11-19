@@ -141,7 +141,9 @@ Logs del orquestador: `make logs-saga`.
 
 ### Resultados
 
-> (captura de `make saga-test`)
+![Resultado de make saga-test](evidencias/fase6/saga-test.png)
+
+Salida completa: [saga-test.txt](evidencias/fase6/saga-test.txt)
 
 ## Limitaciones
 

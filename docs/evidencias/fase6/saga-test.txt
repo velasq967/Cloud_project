@@ -1,0 +1,116 @@
+bash scripts/saga-test.sh
+
+==================== Preparando ====================
+  WH-001 tiene poco stock (52), agregando 100 unidades
+  WH-001: cantidad=152 reservado=0 | WH-002: cantidad=150 reservado=0
+
+==================== Caso del enunciado: 30 unidades de WH-001 a WH-002 ====================
+  POST /transfers -> {"transfer_id":"TR-008","status":"PROCESSING"}
+  historial de TR-008:
+    REQUESTED - solicitud recibida
+    RESERVING_SOURCE - destino verificado, reservando en origen
+    SOURCE_RESERVED - reserva hecha en origen
+    IN_TRANSIT - mercancia despachada desde origen
+    DESTINATION_RECEIVED - mercancia recibida en destino
+    COMPLETED - transferencia completada
+  WH-001: cantidad=122 reservado=0 | WH-002: cantidad=180 reservado=0
+  >> OK: transferencia normal (TR-008 COMPLETED, -30 / +30)
+
+==================== Experimento 1: fallo antes de reservar ====================
+  historial de TR-009:
+    REQUESTED - solicitud recibida
+    RESERVING_SOURCE - destino verificado, reservando en origen
+    FAILED - fallo simulado antes de reservar, no se toco el inventario
+  WH-001: cantidad=122 reservado=0 | WH-002: cantidad=180 reservado=0
+  >> OK: fallo antes de reservar (TR-009 FAILED, inventario igual)
+
+==================== Experimento 2: fallo despues de reservar ====================
+  historial de TR-010:
+    REQUESTED - solicitud recibida
+    RESERVING_SOURCE - destino verificado, reservando en origen
+    SOURCE_RESERVED - reserva hecha en origen
+    COMPENSATING - fallo simulado despues de reservar
+    RESERVATION_RELEASED - compensacion: reserva liberada en origen
+  WH-001: cantidad=122 reservado=0 | WH-002: cantidad=180 reservado=0
+  >> OK: fallo despues de reservar (TR-010 compensada, reserva liberada)
+
+==================== Experimento 3a: destino caido desde el inicio ====================
+  WH-002 apagada
+  historial de TR-011:
+    REQUESTED - solicitud recibida
+    REQUESTED - check en WH-002 intento 1 fallo: timeout
+    REQUESTED - check en WH-002 intento 2 fallo: HTTP 502
+    REQUESTED - check en WH-002 intento 3 fallo: HTTP 502
+    FAILED - destino no responde, no se empieza la transferencia: HTTP 502
+  prendiendo WH-002...
+  WH-001: cantidad=122 reservado=0 | WH-002: cantidad=180 reservado=0
+  >> OK: destino caido al inicio (TR-011 FAILED sin mover nada)
+
+==================== Experimento 3b: destino se cae con la mercancia en camino ====================
+  TR-012 esta IN_TRANSIT, apagando WH-002
+  estado: DESTINATION_PENDING
+  WH-001: cantidad=117 reservado=0 | WH-002: caida
+  prendiendo WH-002...
+  historial de TR-012:
+    REQUESTED - solicitud recibida
+    RESERVING_SOURCE - destino verificado, reservando en origen
+    SOURCE_RESERVED - reserva hecha en origen
+    IN_TRANSIT - mercancia despachada desde origen
+    IN_TRANSIT - pausa simulada de 10s antes de recibir
+    IN_TRANSIT - receive en WH-002 intento 1 fallo: HTTP 502
+    IN_TRANSIT - receive en WH-002 intento 2 fallo: HTTP 502
+    IN_TRANSIT - receive en WH-002 intento 3 fallo: HTTP 502
+    DESTINATION_PENDING - destino no recibio, se reintenta: HTTP 502
+    DESTINATION_PENDING - destino sigue sin recibir: HTTP 502
+    DESTINATION_PENDING - destino sigue sin recibir: HTTP 502
+    DESTINATION_PENDING - destino sigue sin recibir: HTTP 502
+    DESTINATION_RECEIVED - destino volvio y recibio la mercancia
+    COMPLETED - transferencia completada
+  WH-001: cantidad=117 reservado=0 | WH-002: cantidad=185 reservado=0
+  >> OK: destino caido en transito (TR-012 esperó y luego COMPLETED)
+
+==================== Experimento 4: mensaje duplicado ====================
+  POST 1 -> {"transfer_id":"TR-DUP-1795072108","status":"PROCESSING"}
+  POST 2 -> {"transfer_id":"TR-DUP-1795072108","status":"PROCESSING"}
+  reenviando el mismo mensaje a RabbitMQ:
+  {"transfer_id":"TR-DUP-1795072108","republished":true}
+  historial de TR-DUP-1795072108:
+    REQUESTED - solicitud recibida
+    RESERVING_SOURCE - destino verificado, reservando en origen
+    SOURCE_RESERVED - reserva hecha en origen
+    IN_TRANSIT - mercancia despachada desde origen
+    DESTINATION_RECEIVED - mercancia recibida en destino
+    COMPLETED - transferencia completada
+    COMPLETED - mensaje duplicado ignorado, la transferencia ya termino
+  WH-001: cantidad=112 reservado=0 | WH-002: cantidad=190 reservado=0
+  >> OK: mensaje duplicado (TR-DUP-1795072108 se aplico una sola vez)
+
+==================== Experimento 5: timeout ====================
+  historial de TR-013:
+    REQUESTED - solicitud recibida
+    RESERVING_SOURCE - destino verificado, reservando en origen
+    RESERVING_SOURCE - reserve en WH-001 intento 1 fallo: timeout
+    SOURCE_RESERVED - reserva hecha en origen (ya estaba hecha, respuesta repetida)
+    IN_TRANSIT - mercancia despachada desde origen
+    DESTINATION_RECEIVED - mercancia recibida en destino
+    COMPLETED - transferencia completada
+  WH-001: cantidad=107 reservado=0 | WH-002: cantidad=195 reservado=0
+  >> OK: timeout (TR-013 reintento sin reservar dos veces)
+
+==================== Experimento 6: worker reiniciado ====================
+  estado antes de reiniciar: SOURCE_RESERVED
+  transfer-worker reiniciado
+  historial de TR-014:
+    REQUESTED - solicitud recibida
+    RESERVING_SOURCE - destino verificado, reservando en origen
+    SOURCE_RESERVED - reserva hecha en origen
+    IN_TRANSIT - mercancia despachada desde origen
+    DESTINATION_RECEIVED - mercancia recibida en destino
+    COMPLETED - transferencia completada
+    COMPLETED - mensaje duplicado ignorado, la transferencia ya termino
+  WH-001: cantidad=102 reservado=0 | WH-002: cantidad=200 reservado=0
+  >> OK: worker reiniciado (TR-014 retomo y termino)
+
+==================== Resumen ====================
+  experimentos OK: 8 de 8
+  OK: todos los experimentos de la saga pasaron
