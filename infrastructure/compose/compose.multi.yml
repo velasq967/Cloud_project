@@ -503,6 +503,22 @@ services:
       central-api:
         condition: service_healthy
 
+
+  # fase 7: mantiene el read model global_inventory con los eventos de las bodegas
+  projection-worker:
+    image: warehouse-central:local
+    container_name: projection-worker
+    command: ["python", "-m", "central.projection_worker"]
+    environment: *central-env
+    depends_on:
+      central-api:
+        condition: service_healthy
+      wh001-api:
+        condition: service_healthy
+      wh002-lb:
+        condition: service_started
+      wh003-api:
+        condition: service_healthy
 volumes:
   central_postgres_data:
   multi_rabbitmq_data:

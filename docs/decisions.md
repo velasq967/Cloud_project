@@ -276,3 +276,35 @@ Formato: **Problema → Alternativas → Decisión → Trade-offs → Mitigació
 **Trade-offs:** si el destino no vuelve nunca, la transferencia se queda pendiente.
 
 **Mitigación:** antes de reservar se hace `check` al destino, así que no se empieza una transferencia hacia una bodega caída. Devolver la mercancía tiene su propio riesgo: si la recepción sí quedó pero la respuesta se perdió, la mercancía quedaría en las dos bodegas.
+
+---
+
+## ADR-018: Read model para el inventario global (Fase 7)
+
+**Problema:** la central necesita el inventario total por SKU y cada bodega tiene su propia base.
+
+**Alternativas:**
+1. Consultar todas las bodegas en cada request (alternativa A).
+2. Mantener un read model en la central alimentado por eventos (alternativa B, CQRS).
+
+**Decisión:** las dos quedan implementadas para poder compararlas (`/global/inventory-live/{sku}` y `/global/inventory/{sku}`), y B es la consulta principal. `projection-worker` escucha `warehouse.*.INVENTORY_UPDATED` y mantiene la tabla `global_inventory` en `central-db`.
+
+**Trade-offs:** consistencia eventual: el dato puede ir atrasado. Hay un worker y una tabla más que mantener.
+
+**Mitigación:** la respuesta dice hace cuánto llegó el último dato de cada bodega, y `POST /global/rebuild` reconstruye todo desde las bodegas.
+
+---
+
+## ADR-019: SKU en los eventos y "gana el evento más nuevo" (Fase 7)
+
+**Problema:** el `product_id` es distinto en cada base, y los eventos pueden llegar duplicados o desordenados.
+
+**Alternativas:**
+1. Tabla de eventos procesados (`processed_events`) para descartar duplicados.
+2. Guardar la fecha del último evento aplicado y solo aceptar eventos más nuevos.
+
+**Decisión:** `INVENTORY_UPDATED` ahora incluye el `sku`. Cada fila del read model guarda `last_event_at` y el upsert solo actualiza si el evento es más nuevo (`ON CONFLICT ... DO UPDATE ... WHERE last_event_at < excluded.last_event_at`).
+
+**Trade-offs:** depende de que los relojes de las bodegas estén sincronizados.
+
+**Mitigación:** como el evento trae el stock completo (no un "+10"), aplicar el más nuevo siempre deja el valor correcto, y con un solo mecanismo se cubren duplicados y desorden. En la nube los servidores sincronizan la hora con NTP.

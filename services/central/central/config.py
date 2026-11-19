@@ -11,6 +11,8 @@ class CentralSettings(BaseSettings):
     REQUEST_TIMEOUT: float = 3.0
     SAGA_RETRIES: int = 3
     SWEEP_SECONDS: int = 5
+    # timeout de la consulta en vivo a las bodegas (fase 7, alternativa A)
+    LIVE_TIMEOUT: float = 2.0
     LOG_LEVEL: str = "INFO"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -29,3 +31,7 @@ settings = CentralSettings()
 
 TRANSFER_QUEUE = "transfers.saga.q"
 TRANSFER_ROUTING_KEY = "transfer.TRANSFER_REQUESTED"
+
+# fase 7: el projection worker escucha los INVENTORY_UPDATED de todas las bodegas
+PROJECTION_QUEUE = "central.projection.q"
+PROJECTION_ROUTING_KEY = "warehouse.*.INVENTORY_UPDATED"

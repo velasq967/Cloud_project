@@ -118,7 +118,7 @@ class TransferStepService:
             raise HTTPException(status_code=500, detail=f"Error en el paso {step}: {exc}")
 
         if movement_type:
-            self._after_commit(product.id, movement_type, body.quantity, inventory)
+            self._after_commit(product, movement_type, body.quantity, inventory)
 
         logger.info(
             "transfer_step_applied",
@@ -176,7 +176,8 @@ class TransferStepService:
         # que una reserva que llegue tarde sea rechazada
         return None, "nothing_reserved"
 
-    def _after_commit(self, product_id, movement_type, quantity, inventory):
+    def _after_commit(self, product, movement_type, quantity, inventory):
+        product_id = product.id
         cache_client.delete_inventory(product_id)
         publisher.publish_many(
             [
@@ -196,6 +197,7 @@ class TransferStepService:
                     {
                         "warehouse_id": settings.WAREHOUSE_ID,
                         "product_id": product_id,
+                        "sku": product.sku,
                         "quantity": inventory.quantity,
                         "reserved_quantity": inventory.reserved_quantity,
                     },
