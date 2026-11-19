@@ -35,8 +35,8 @@ function Test-Movement($wh) {
 Step "1. Estado inicial"
 "WH-001", "WH-002", "WH-003" | ForEach-Object { [void](Test-Health $_) }
 
-Step "2. Apagando WH-002 (api + db)"
-docker @Compose stop wh002-api wh002-db | Out-Null
+Step "2. Apagando WH-002 (apis + db)"
+docker @Compose stop wh002-api-1 wh002-api-2 wh002-api-3 wh002-db | Out-Null
 Start-Sleep -Seconds 2
 
 Step "3. WH-002 caida, probando WH-001 y WH-003"
@@ -47,7 +47,7 @@ foreach ($wh in "WH-001", "WH-003") {
 }
 
 Step "4. Levantando WH-002 otra vez"
-docker @Compose start wh002-db wh002-api | Out-Null
+docker @Compose start wh002-db wh002-api-1 wh002-api-2 wh002-api-3 | Out-Null
 for ($i = 0; $i -lt 30; $i++) {
     try { Invoke-WebRequest -Uri "$($Api['WH-002'])/health" -TimeoutSec 2 -UseBasicParsing | Out-Null; break } catch { Start-Sleep -Seconds 2 }
 }

@@ -1,6 +1,6 @@
 // Carga por bodega: WH-001 50 req/s, WH-002 800 req/s, WH-003 20 req/s
 // SCALE baja todas las tasas igual (default 0.1 -> 5/80/2)
-// docker run --rm -i --network host -v "$PWD/load-tests:/load-tests" grafana/k6 run /load-tests/k6/phase4-multi-warehouse.js
+// make load-multi
 
 import http from 'k6/http';
 import { check } from 'k6';

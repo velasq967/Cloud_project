@@ -39,8 +39,8 @@ movement() {
 step "1. Estado inicial"
 for wh in WH-001 WH-002 WH-003; do check "$wh"; done
 
-step "2. Apagando WH-002 (api + db)"
-$COMPOSE stop wh002-api wh002-db >/dev/null
+step "2. Apagando WH-002 (apis + db)"
+$COMPOSE stop wh002-api-1 wh002-api-2 wh002-api-3 wh002-db >/dev/null
 sleep 2
 
 step "3. WH-002 caida, probando WH-001 y WH-003"
@@ -52,7 +52,7 @@ for wh in WH-001 WH-003; do
 done
 
 step "4. Levantando WH-002 otra vez"
-$COMPOSE start wh002-db wh002-api >/dev/null
+$COMPOSE start wh002-db wh002-api-1 wh002-api-2 wh002-api-3 >/dev/null
 for i in $(seq 1 30); do
   check WH-002 >/dev/null 2>&1 && break
   sleep 2

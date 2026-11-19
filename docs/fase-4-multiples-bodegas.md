@@ -60,7 +60,11 @@ El script apaga la API y la base de WH-002, revisa que WH-001 y WH-003 siguen re
 
 Resultado obtenido:
 
-> (pegar aquí la captura de la salida del script)
+![Prueba de fallo WH-002](evidencias/prueba-fallo.png)
+
+![Prueba de fallo WH-002 con logs de Docker](evidencias/prueba-fallo.jpeg)
+
+Salida completa en texto: [fault-test.txt](evidencias/fase4/fault-test.txt)
 
 ## Prueba de carga
 

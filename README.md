@@ -43,6 +43,7 @@ PostgreSQL
 | 2 · Redis cache-aside | ✅ | `docs/decisions.md` |
 | 3 · RabbitMQ + workers | ✅ | `docs/decisions.md` |
 | 4 · Múltiples bodegas | ✅ | [docs/fase-4-multiples-bodegas.md](docs/fase-4-multiples-bodegas.md) |
+| 5 · Load balancing | ✅ | [docs/fase-5-load-balancing.md](docs/fase-5-load-balancing.md) |
 
 ### Fase 4
 
@@ -50,6 +51,15 @@ PostgreSQL
 make up-multi      # levanta WH-001, WH-002 y WH-003
 make fault-wh002   # apaga WH-002 y prueba las otras
 make load-multi    # prueba de carga
+```
+
+### Fase 5
+
+```bash
+make lb-test       # reparto entre las 3 replicas de WH-002 y caida de una
+make wh002-1       # deja WH-002 con 1 replica
+make load-lb       # prueba de carga sobre WH-002
+make wh002-3       # vuelve a 3 replicas
 ```
 
 ## Estructura

@@ -195,3 +195,35 @@ Formato: **Problema → Alternativas → Decisión → Trade-offs → Mitigació
 **Trade-offs:** cuesta más y hay más máquinas que administrar.
 
 **Mitigación:** WH-002 es t3.medium y las otras t3.small. Para escalar una bodega se cambia una línea en `variables.tf`.
+
+---
+
+## ADR-013: Nginx como balanceador de WH-002 (Fase 5)
+
+**Problema:** WH-002 tiene la carga más alta y una sola instancia de la API no alcanza.
+
+**Alternativas:**
+1. Una sola API más grande (escalar vertical).
+2. Varias réplicas de la API detrás de un balanceador (escalar horizontal).
+
+**Decisión:** 3 réplicas (`wh002-api-1`, `-2`, `-3`) detrás de Nginx con round robin. Nginx usa `resolve`, así que si una réplica se apaga sale del pool y cuando vuelve se agrega sola. Con `proxy_next_upstream`, si una réplica falla el request se reintenta en otra.
+
+**Trade-offs:** Nginx pasa a ser un punto único de falla para WH-002 y se agrega un salto de red.
+
+**Mitigación:** Nginx casi no consume recursos y no tiene estado. En AWS se reemplaza por un ALB, que es administrado y redundante.
+
+---
+
+## ADR-014: API stateless, estado en Redis y PostgreSQL (Fase 5)
+
+**Problema:** con varias réplicas, cualquier request puede llegar a cualquiera, así que ninguna puede guardar cosas importantes en memoria.
+
+**Alternativas:**
+1. Sesiones o caché en memoria de cada réplica (sticky sessions).
+2. Todo el estado en servicios externos compartidos.
+
+**Decisión:** las 3 réplicas usan el mismo Redis y la misma PostgreSQL de WH-002. Solo `wh002-api-1` corre el seed y las otras arrancan después de ella, para que no corran migraciones al mismo tiempo.
+
+**Trade-offs:** Redis y PostgreSQL ahora reciben el tráfico de las 3 réplicas.
+
+**Mitigación:** la caché reduce las lecturas a la base. Si Redis se cae, la API sigue funcionando contra PostgreSQL (fase 2).
