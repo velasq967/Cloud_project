@@ -1,0 +1,128 @@
+name: warehouse-node
+
+# Una bodega por EC2 (AWS). RabbitMQ corre en la instancia central.
+# docker compose --env-file .env.node -f infrastructure/compose/compose.node.yml up --build -d
+
+x-api-build: &api-build
+  build:
+    context: ../..
+    dockerfile: services/warehouse-api/Dockerfile
+  image: warehouse-api:local
+  restart: unless-stopped
+
+x-worker-build: &worker-build
+  build:
+    context: ../..
+    dockerfile: services/workers/Dockerfile
+  image: warehouse-workers:local
+  restart: unless-stopped
+
+x-frontend-build: &frontend-build
+  build:
+    context: ../..
+    dockerfile: services/frontend/app/Dockerfile
+  image: warehouse-frontend:local
+  restart: unless-stopped
+
+x-postgres: &postgres
+  image: postgres:16-alpine
+  restart: unless-stopped
+  environment:
+    POSTGRES_USER: ${POSTGRES_USER:-warehouse_user}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-warehouse_pass}
+    POSTGRES_DB: ${POSTGRES_DB:-warehouse_db}
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-warehouse_user} -d ${POSTGRES_DB:-warehouse_db}"]
+    interval: 5s
+    timeout: 5s
+    retries: 12
+
+x-redis: &redis
+  image: redis:7-alpine
+  restart: unless-stopped
+  command: ["redis-server", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+  healthcheck:
+    test: ["CMD", "redis-cli", "ping"]
+    interval: 5s
+    timeout: 3s
+    retries: 12
+
+x-api-healthcheck: &api-healthcheck
+  test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+  interval: 10s
+  timeout: 5s
+  retries: 8
+  start_period: 20s
+
+x-worker-env: &worker-env
+  WAREHOUSE_ID: ${WAREHOUSE_ID:?definir WAREHOUSE_ID}
+  DATABASE_URL: postgresql://${POSTGRES_USER:-warehouse_user}:${POSTGRES_PASSWORD:-warehouse_pass}@db:5432/${POSTGRES_DB:-warehouse_db}
+  REDIS_URL: redis://redis:6379/0
+  RABBITMQ_URL: ${RABBITMQ_URL:?definir RABBITMQ_URL}
+  RABBITMQ_EXCHANGE: warehouse.events
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+x-worker-deps: &worker-deps
+  depends_on:
+    api:
+      condition: service_healthy
+
+services:
+  db:
+    <<: *postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    <<: *redis
+
+  api:
+    <<: *api-build
+    environment:
+      WAREHOUSE_ID: ${WAREHOUSE_ID:?definir WAREHOUSE_ID}
+      WAREHOUSE_NAME: ${WAREHOUSE_NAME:-Bodega}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-warehouse_user}:${POSTGRES_PASSWORD:-warehouse_pass}@db:5432/${POSTGRES_DB:-warehouse_db}
+      REDIS_URL: redis://redis:6379/0
+      CACHE_ENABLED: ${CACHE_ENABLED:-true}
+      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-30}
+      RABBITMQ_ENABLED: ${RABBITMQ_ENABLED:-true}
+      RABBITMQ_URL: ${RABBITMQ_URL:?definir RABBITMQ_URL}
+      RABBITMQ_EXCHANGE: warehouse.events
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SEED_ON_START: ${SEED_ON_START:-true}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck: *api-healthcheck
+
+  audit-worker:
+    <<: [*worker-build, *worker-deps]
+    command: ["python", "-m", "audit_worker.main"]
+    environment: *worker-env
+
+  cache-worker:
+    <<: [*worker-build, *worker-deps]
+    command: ["python", "-m", "cache_worker.main"]
+    environment: *worker-env
+
+  report-worker:
+    <<: [*worker-build, *worker-deps]
+    command: ["python", "-m", "report_worker.main"]
+    environment: *worker-env
+
+  frontend:
+    <<: *frontend-build
+    environment:
+      API_TARGET: api:8000
+    ports:
+      - "80:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

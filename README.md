@@ -1,4 +1,4 @@
-# Warehouse Cloud Platform — Fase 1
+# Warehouse Cloud Platform
 
 Plataforma de gestión de una bodega (WH-001) con **FastAPI + PostgreSQL + Nginx + Docker**.
 
@@ -34,6 +34,23 @@ PostgreSQL
 - Seed de datos.
 
 **Fuera de alcance por ahora**: Redis, RabbitMQ, workers, múltiples bodegas, load balancer, Saga, CQRS, S3 batch, Lambda e IoT. Se incorporan en fases posteriores.
+
+## Estado por fases
+
+| Fase | Estado | Documento |
+|---|---|---|
+| 1 · Bodega + API + PostgreSQL | ✅ | este README |
+| 2 · Redis cache-aside | ✅ | `docs/decisions.md` |
+| 3 · RabbitMQ + workers | ✅ | `docs/decisions.md` |
+| 4 · Múltiples bodegas | ✅ | [docs/fase-4-multiples-bodegas.md](docs/fase-4-multiples-bodegas.md) |
+
+### Fase 4
+
+```bash
+make up-multi      # levanta WH-001, WH-002 y WH-003
+make fault-wh002   # apaga WH-002 y prueba las otras
+make load-multi    # prueba de carga
+```
 
 ## Estructura
 

@@ -1,0 +1,24 @@
+#!/bin/bash
+# instala docker y levanta la bodega ${warehouse_id}
+set -eux
+exec > /var/log/warehouse-bootstrap.log 2>&1
+
+apt-get update
+apt-get install -y ca-certificates curl git
+curl -fsSL https://get.docker.com | sh
+usermod -aG docker ubuntu
+
+cd /home/ubuntu
+git clone --branch "${repo_branch}" "${repo_url}" app
+cd app
+
+cat > .env.node <<ENV
+WAREHOUSE_ID=${warehouse_id}
+WAREHOUSE_NAME=${warehouse_name}
+RABBITMQ_URL=amqp://${rabbit_user}:${rabbit_pass}@${rabbit_host}:5672/%2F
+SEED_ON_START=true
+LOG_LEVEL=INFO
+ENV
+chown -R ubuntu:ubuntu /home/ubuntu/app
+
+docker compose --env-file .env.node -f infrastructure/compose/compose.node.yml up --build -d

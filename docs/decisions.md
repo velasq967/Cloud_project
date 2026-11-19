@@ -147,3 +147,51 @@ Formato: **Problema → Alternativas → Decisión → Trade-offs → Mitigació
 **Trade-offs:** hay que configurar el `.env` en cada entorno.
 
 **Mitigación:** README y manuales explican el paso a paso; `.gitignore` excluye `.env` y `.pem`.
+
+---
+
+## ADR-010: Una base y un Redis por bodega (Fase 4)
+
+**Problema:** con varias bodegas hay que decidir si comparten la base de datos.
+
+**Alternativas:**
+1. Una sola PostgreSQL para todas, separando por `warehouse_id`.
+2. Una PostgreSQL y un Redis por bodega.
+
+**Decisión:** cada bodega tiene su propia API, PostgreSQL y Redis.
+
+**Trade-offs:** no hay transacción SQL entre bodegas (las transferencias van con Saga en la fase 6) y el inventario global necesita un read model (fase 7).
+
+**Mitigación:** el código es el mismo para todas, solo cambian las variables de entorno. Si una bodega se cae o tiene mucha carga, las otras no se enteran.
+
+---
+
+## ADR-011: RabbitMQ compartido con colas por bodega (Fase 4)
+
+**Problema:** en la fase 3 las colas escuchaban `warehouse.*`. Con un Redis por bodega, el cache-worker de WH-001 podía recibir eventos de WH-002 y borrar la caché equivocada.
+
+**Alternativas:**
+1. Un RabbitMQ por bodega.
+2. Un RabbitMQ para todos, con colas separadas por bodega.
+
+**Decisión:** un solo exchange `warehouse.events` y colas `<nombre>.<WAREHOUSE_ID>.q` que solo reciben `warehouse.<WAREHOUSE_ID>.*`.
+
+**Trade-offs:** si RabbitMQ se cae, se pierden los eventos de ese rato.
+
+**Mitigación:** la API sigue funcionando aunque RabbitMQ no responda (circuit breaker del publisher). En la fase 10 se agrega Outbox.
+
+---
+
+## ADR-012: Una EC2 por bodega con tamaño distinto (Fase 4)
+
+**Problema:** las bodegas tienen cargas muy diferentes (50, 800 y 20 req/s).
+
+**Alternativas:**
+1. Todas en una sola EC2 grande.
+2. Una EC2 por bodega, cada una con su tamaño.
+
+**Decisión:** Terraform crea una EC2 por bodega desde la lista `warehouses`, más una EC2 central con RabbitMQ.
+
+**Trade-offs:** cuesta más y hay más máquinas que administrar.
+
+**Mitigación:** WH-002 es t3.medium y las otras t3.small. Para escalar una bodega se cambia una línea en `variables.tf`.

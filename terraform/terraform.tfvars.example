@@ -1,0 +1,4 @@
+# copiar como terraform.tfvars
+my_ip_cidr        = "TU.IP.PUBLICA.AQUI/32"
+rabbitmq_password = "cambia-esta-clave"
+repo_branch       = "santiago"

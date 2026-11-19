@@ -11,15 +11,31 @@ from shared.config import settings
 logger = logging.getLogger("worker.rabbit")
 
 EXCHANGE = settings.RABBITMQ_EXCHANGE
+WAREHOUSE_ID = settings.WAREHOUSE_ID
 
-QUEUES = {
-    "cache.inventory.q": ["warehouse.*.INVENTORY_UPDATED"],
-    "audit.events.q": [
-        "warehouse.*.INVENTORY_UPDATED",
-        "warehouse.*.INVENTORY_MOVEMENT_REGISTERED",
-    ],
-    "report.jobs.q": ["warehouse.*.REPORT_REQUESTED"],
-}
+
+def queue_name(base: str, warehouse_id: str = WAREHOUSE_ID) -> str:
+    # cada bodega tiene sus colas, ej: cache.inventory.WH-001.q
+    return f"{base}.{warehouse_id}.q"
+
+
+def build_queues(warehouse_id: str = WAREHOUSE_ID) -> dict[str, list[str]]:
+    prefix = f"warehouse.{warehouse_id}"
+    return {
+        queue_name("cache.inventory", warehouse_id): [
+            f"{prefix}.INVENTORY_UPDATED",
+        ],
+        queue_name("audit.events", warehouse_id): [
+            f"{prefix}.INVENTORY_UPDATED",
+            f"{prefix}.INVENTORY_MOVEMENT_REGISTERED",
+        ],
+        queue_name("report.jobs", warehouse_id): [
+            f"{prefix}.REPORT_REQUESTED",
+        ],
+    }
+
+
+QUEUES = build_queues()
 
 
 def connect_with_retry(attempts: int = 60, delay: int = 2) -> pika.BlockingConnection:

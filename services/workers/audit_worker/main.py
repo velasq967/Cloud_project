@@ -3,13 +3,13 @@ import logging
 from psycopg2.extras import Json
 from shared.db import get_connection
 from shared.logging import configure_worker_logging
-from shared.rabbit import consume
+from shared.rabbit import consume, queue_name
 
 configure_worker_logging("audit-worker")
 logger = logging.getLogger("worker.audit")
 
 CONSUMER = "audit-worker"
-QUEUE = "audit.events.q"
+QUEUE = queue_name("audit.events")
 
 
 def handle(event: dict) -> None:

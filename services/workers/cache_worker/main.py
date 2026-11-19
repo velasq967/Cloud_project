@@ -3,12 +3,12 @@ import logging
 import redis
 from shared.config import settings
 from shared.logging import configure_worker_logging
-from shared.rabbit import consume
+from shared.rabbit import consume, queue_name
 
 configure_worker_logging("cache-worker")
 logger = logging.getLogger("worker.cache")
 
-QUEUE = "cache.inventory.q"
+QUEUE = queue_name("cache.inventory")
 redis_client = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
 
 
