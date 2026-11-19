@@ -10,6 +10,7 @@ from app.modules.health.health_controller import router as health_router
 from app.modules.inventory.inventory_controller import router as inventory_router
 from app.modules.products.products_controller import router as products_router
 from app.modules.reports.reports_controller import router as reports_router
+from app.modules.transfers.transfers_controller import router as transfers_router
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -58,6 +59,7 @@ def create_app() -> FastAPI:
     application.include_router(products_router)
     application.include_router(inventory_router)
     application.include_router(reports_router)
+    application.include_router(transfers_router)
 
     @application.get("/", include_in_schema=False)
     def root():

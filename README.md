@@ -44,6 +44,7 @@ PostgreSQL
 | 3 · RabbitMQ + workers | ✅ | `docs/decisions.md` |
 | 4 · Múltiples bodegas | ✅ | [docs/fase-4-multiples-bodegas.md](docs/fase-4-multiples-bodegas.md) |
 | 5 · Load balancing | ✅ | [docs/fase-5-load-balancing.md](docs/fase-5-load-balancing.md) |
+| 6 · Transferencias y Saga | ✅ | [docs/fase-6-transferencias-saga.md](docs/fase-6-transferencias-saga.md) |
 
 ### Fase 4
 
@@ -61,6 +62,15 @@ make wh002-1       # deja WH-002 con 1 replica
 make load-lb       # prueba de carga sobre WH-002
 make wh002-3       # vuelve a 3 replicas
 ```
+
+### Fase 6
+
+```bash
+make saga-test     # transferencia WH-001 -> WH-002 y los 6 experimentos de fallo
+make logs-saga     # logs del orquestador
+```
+
+API central de transferencias: http://localhost:8010/docs
 
 ## Estructura
 

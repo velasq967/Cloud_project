@@ -16,10 +16,11 @@ ignore = ["E501"]
 "services/warehouse-api/tests/conftest.py" = ["E402"]
 
 [tool.pytest.ini_options]
-testpaths = ["services/warehouse-api/tests", "services/workers/tests"]
+testpaths = ["services/warehouse-api/tests", "services/workers/tests", "services/central/tests"]
 pythonpath = [
   "libs/common",
   "services/warehouse-api",
   "services/workers",
+  "services/central",
 ]
 addopts = "-ra"

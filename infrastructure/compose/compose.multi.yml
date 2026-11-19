@@ -103,6 +103,7 @@ services:
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-warehouse}:${RABBITMQ_PASSWORD:-warehouse_pass}@rabbitmq:5672/%2F
       RABBITMQ_EXCHANGE: warehouse.events
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ALLOW_FAULT_INJECTION: "true"
       SEED_ON_START: "true"
     ports:
       - "8001:8000"
@@ -208,6 +209,7 @@ services:
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-warehouse}:${RABBITMQ_PASSWORD:-warehouse_pass}@rabbitmq:5672/%2F
       RABBITMQ_EXCHANGE: warehouse.events
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ALLOW_FAULT_INJECTION: "true"
       SEED_ON_START: "true"
       INSTANCE_ID: wh002-api-1
     depends_on:
@@ -234,6 +236,7 @@ services:
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-warehouse}:${RABBITMQ_PASSWORD:-warehouse_pass}@rabbitmq:5672/%2F
       RABBITMQ_EXCHANGE: warehouse.events
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ALLOW_FAULT_INJECTION: "true"
       SEED_ON_START: "false"
       INSTANCE_ID: wh002-api-2
     depends_on:
@@ -256,6 +259,7 @@ services:
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-warehouse}:${RABBITMQ_PASSWORD:-warehouse_pass}@rabbitmq:5672/%2F
       RABBITMQ_EXCHANGE: warehouse.events
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ALLOW_FAULT_INJECTION: "true"
       SEED_ON_START: "false"
       INSTANCE_ID: wh002-api-3
     depends_on:
@@ -370,6 +374,7 @@ services:
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-warehouse}:${RABBITMQ_PASSWORD:-warehouse_pass}@rabbitmq:5672/%2F
       RABBITMQ_EXCHANGE: warehouse.events
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ALLOW_FAULT_INJECTION: "true"
       SEED_ON_START: "true"
     ports:
       - "8003:8000"
@@ -444,7 +449,62 @@ services:
       wh003-api:
         condition: service_healthy
 
+
+  # central: orquestador de transferencias (fase 6)
+  central-db:
+    image: postgres:16-alpine
+    container_name: central-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-warehouse_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-warehouse_pass}
+      POSTGRES_DB: central_db
+    ports:
+      - "5450:5432"
+    volumes:
+      - central_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-warehouse_user} -d central_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  central-api:
+    build:
+      context: ../..
+      dockerfile: services/central/Dockerfile
+    image: warehouse-central:local
+    container_name: central-api
+    environment: &central-env
+      DATABASE_URL: postgresql://${POSTGRES_USER:-warehouse_user}:${POSTGRES_PASSWORD:-warehouse_pass}@central-db:5432/central_db
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-warehouse}:${RABBITMQ_PASSWORD:-warehouse_pass}@rabbitmq:5672/%2F
+      RABBITMQ_EXCHANGE: warehouse.events
+      WAREHOUSE_URLS: WH-001=http://wh001-api:8000,WH-002=http://wh002-lb,WH-003=http://wh003-api:8000
+      REQUEST_TIMEOUT: "3"
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8010:8000"
+    depends_on:
+      central-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  transfer-worker:
+    image: warehouse-central:local
+    container_name: transfer-worker
+    command: ["python", "-m", "central.worker"]
+    environment: *central-env
+    depends_on:
+      central-api:
+        condition: service_healthy
+
 volumes:
+  central_postgres_data:
   multi_rabbitmq_data:
   wh001_postgres_data:
   wh002_postgres_data:

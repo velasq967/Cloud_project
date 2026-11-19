@@ -227,3 +227,52 @@ Formato: **Problema → Alternativas → Decisión → Trade-offs → Mitigació
 **Trade-offs:** Redis y PostgreSQL ahora reciben el tráfico de las 3 réplicas.
 
 **Mitigación:** la caché reduce las lecturas a la base. Si Redis se cae, la API sigue funcionando contra PostgreSQL (fase 2).
+
+---
+
+## ADR-015: Saga orquestada para transferencias (Fase 6)
+
+**Problema:** una transferencia cambia el inventario de dos bodegas con bases separadas, y no hay transacción SQL entre ellas.
+
+**Alternativas:**
+1. Two-phase commit (2PC) entre las dos bases.
+2. Saga coreografiada: cada bodega reacciona a los eventos de la otra.
+3. Saga orquestada: un servicio central decide el siguiente paso.
+
+**Decisión:** saga orquestada con `central-api` + `transfer-worker` y su propia base (`central-db`). El estado de cada transferencia y su historial quedan en un solo lugar.
+
+**Trade-offs:** el orquestador es un componente más que puede fallar, y la transferencia no es instantánea (consistencia eventual).
+
+**Mitigación:** el estado se guarda antes de cada paso y el worker retoma lo pendiente al arrancar y cada 5 s. 2PC se descartó porque bloquea las dos bases mientras espera y no funciona bien si una bodega se cae.
+
+---
+
+## ADR-016: Pasos idempotentes en las bodegas (Fase 6)
+
+**Problema:** con reintentos, timeouts y mensajes duplicados, un mismo paso puede llegar varias veces a una bodega.
+
+**Alternativas:**
+1. Que el orquestador evite repetir pasos (no se puede garantizar si hay timeouts).
+2. Que la bodega recuerde los pasos ya aplicados.
+
+**Decisión:** tabla `transfer_operations` con `UNIQUE (transfer_id, step)` en cada bodega. Si el paso ya existe, se responde `already_done` sin tocar el inventario. El paso y el cambio de inventario se guardan en la misma transacción.
+
+**Trade-offs:** una tabla más en cada bodega.
+
+**Mitigación:** es lo que permite reintentar cualquier paso sin miedo, y resuelve el timeout, el duplicado y el reinicio del worker con el mismo mecanismo.
+
+---
+
+## ADR-017: El despacho es el punto de no retorno (Fase 6)
+
+**Problema:** si el destino se cae después de que la mercancía salió del origen, ¿se compensa devolviéndola o se espera?
+
+**Alternativas:**
+1. Compensar devolviendo la mercancía al origen.
+2. Esperar y reintentar la recepción hasta que el destino vuelva.
+
+**Decisión:** antes de `dispatch` se compensa liberando la reserva. Después de `dispatch` solo se avanza: `DESTINATION_PENDING` y reintentos de `receive`.
+
+**Trade-offs:** si el destino no vuelve nunca, la transferencia se queda pendiente.
+
+**Mitigación:** antes de reservar se hace `check` al destino, así que no se empieza una transferencia hacia una bodega caída. Devolver la mercancía tiene su propio riesgo: si la recepción sí quedó pero la respuesta se perdió, la mercancía quedaría en las dos bodegas.

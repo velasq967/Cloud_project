@@ -15,6 +15,8 @@ class WarehouseSettings(CommonSettings):
     RABBITMQ_URL: str = "amqp://warehouse:warehouse_pass@localhost:5672/%2F"
     RABBITMQ_EXCHANGE: str = "warehouse.events"
     SEED_ON_START: bool = False
+    # permite simular demoras en los pasos de transferencia (fase 6)
+    ALLOW_FAULT_INJECTION: bool = False
 
     @property
     def cors_origins(self) -> list[str]:
