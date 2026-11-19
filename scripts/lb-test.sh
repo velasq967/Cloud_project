@@ -16,7 +16,12 @@ instance() {
 
 step "1. Repartiendo 9 requests"
 for i in $(seq 1 9); do
-  echo "request $i -> $(instance)"
+  inst="$(instance)"
+  if [ -z "$inst" ]; then
+    echo "ERROR: la respuesta no trae X-Instance-Id. Revisa que wh002-lb este corriendo (make ps-multi)" >&2
+    exit 1
+  fi
+  echo "request $i -> $inst"
 done
 
 step "2. Apagando wh002-api-2 mientras llegan requests"

@@ -31,10 +31,10 @@ clean:
 
 # fase 4
 up-multi:
-	$(COMPOSE_MULTI) up --build -d
+	$(COMPOSE_MULTI) up --build -d --remove-orphans
 
 down-multi:
-	$(COMPOSE_MULTI) down
+	$(COMPOSE_MULTI) down --remove-orphans
 
 ps-multi:
 	$(COMPOSE_MULTI) ps

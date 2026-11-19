@@ -10,7 +10,11 @@ function Get-Instance {
 }
 
 Write-Host "`n==> 1. Repartiendo 9 requests" -ForegroundColor Cyan
-1..9 | ForEach-Object { Write-Host "request $_ -> $(Get-Instance)" }
+foreach ($i in 1..9) {
+    $inst = Get-Instance
+    if (-not $inst) { Write-Host "ERROR: la respuesta no trae X-Instance-Id. Revisa que wh002-lb este corriendo" -ForegroundColor Red; exit 1 }
+    Write-Host "request $i -> $inst"
+}
 
 Write-Host "`n==> 2. Apagando wh002-api-2 mientras llegan requests" -ForegroundColor Cyan
 $ok = 0; $err = 0; $stopped = $false; $started = $false
