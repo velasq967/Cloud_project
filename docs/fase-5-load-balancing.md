@@ -60,18 +60,34 @@ RATE=200 make load-lb
 
 Si con 200 req/s no se nota diferencia, subir la tasa (`RATE=400`, `RATE=800`) y repetir los dos experimentos con el mismo valor.
 
-| Experimento | Réplicas | req/s pedido | req/s logrado | Latencia promedio (ms) | p95 (ms) | % error |
-|---|---:|---:|---:|---:|---:|---:|
-| 1 | 1 | | | | | |
-| 2 | 3 | | | | | |
+### Resultados (60 s a 200 req/s, en un MacBook Air)
 
-Reparto en el experimento 2 (sale en el resumen de k6 como `requests_por_instancia`):
+| Experimento | Réplicas | Requests | req/s logrado | Promedio (ms) | Mediana (ms) | p95 (ms) | Máximo (ms) | % error | Requests descartados |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 1 | 11.967 | 199,4 | 9,79 | 1,59 | 2,99 | 1.000 | 0 % | 34 |
+| 2 | 3 | 12.001 | 200,0 | 2,13 | 1,62 | 2,73 | 134,7 | 0 % | 0 |
 
-| Réplica | Requests |
-|---|---:|
-| wh002-api-1 | |
-| wh002-api-2 | |
-| wh002-api-3 | |
+Reparto de requests por réplica:
+
+| Réplica | Experimento 1 | Experimento 2 |
+|---|---:|---:|
+| wh002-api-1 | 11.967 | 4.001 |
+| wh002-api-2 | 0 | 4.000 |
+| wh002-api-3 | 0 | 4.000 |
+
+![k6 con 1 réplica](evidencias/fase5/k6-1-replica.png)
+
+![k6 con 3 réplicas](evidencias/fase5/k6-3-replicas.png)
+
+Salida completa: [k6-1-replica.txt](evidencias/fase5/k6-1-replica.txt) y [k6-3-replicas.txt](evidencias/fase5/k6-3-replicas.txt)
+
+### Análisis
+
+- **Las dos configuraciones atendieron la carga sin errores**, pero con 1 réplica el sistema ya estaba al límite. k6 tuvo que descartar 34 requests porque no alcanzaba a mandarlos a tiempo y llegó a usar 84 usuarios virtuales. Con 3 réplicas no se descartó ninguno y bastaron 50.
+- **La latencia promedio bajó de 9,79 ms a 2,13 ms** (unas 4,6 veces menos) y **el máximo bajó de 1 s a 135 ms**. Con una sola réplica hubo picos en los que los requests se quedaban esperando en cola. Con tres, la carga se reparte y esos picos casi desaparecen.
+- La mediana y el p95 son parecidos en los dos casos (~1,6 ms y ~3 ms). La mayoría de los requests son rápidos porque se responden desde Redis. La diferencia está en los requests más lentos, que son los que suben el promedio.
+- **El reparto fue casi perfecto**: 4.001 / 4.000 / 4.000. Nginx usa round robin.
+- A 200 req/s la mejora se ve en la estabilidad más que en el throughput, porque las dos configuraciones alcanzan los 200 req/s. Con más carga (por ejemplo `RATE=600`), una sola réplica empezaría a quedarse por debajo de la tasa pedida.
 
 ## Experimento 3: apagar una instancia
 
@@ -88,7 +104,9 @@ El script:
 
 Resultado obtenido:
 
-> (captura de `make lb-test`)
+![Prueba de caída de una réplica](evidencias/fase5/lb-test.png)
+
+Con `wh002-api-2` apagada hubo 131 requests OK y 0 con error. Antes de apagarla y después de prenderla, el reparto rota entre las tres réplicas.
 
 ## Preguntas
 
