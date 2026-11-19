@@ -6,14 +6,25 @@ output "subnet_id" {
   value = aws_subnet.main_subnet.id
 }
 
-output "ip_wh_001" {
-  value = aws_instance.wh_001.public_ip
-}
-
-output "ip_wh_002" {
-  value = aws_instance.wh_002.public_ip
-}
-
-output "ip_central" {
+output "central_public_ip" {
   value = aws_instance.central.public_ip
+}
+
+output "central_private_ip" {
+  value = aws_instance.central.private_ip
+}
+
+output "rabbitmq_management_url" {
+  value = "http://${aws_instance.central.public_ip}:15672"
+}
+
+output "warehouses" {
+  description = "IP y URLs de cada bodega"
+  value = {
+    for id, inst in aws_instance.warehouse : id => {
+      public_ip = inst.public_ip
+      frontend  = "http://${inst.public_ip}"
+      api_docs  = "http://${inst.public_ip}:8000/docs"
+    }
+  }
 }

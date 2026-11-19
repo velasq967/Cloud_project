@@ -5,12 +5,12 @@ from psycopg2.extras import Json
 from shared.config import settings
 from shared.db import get_connection, get_cursor
 from shared.logging import configure_worker_logging
-from shared.rabbit import consume
+from shared.rabbit import consume, queue_name
 
 configure_worker_logging("report-worker")
 logger = logging.getLogger("worker.report")
 
-QUEUE = "report.jobs.q"
+QUEUE = queue_name("report.jobs")
 CONSUMER = "report-worker"
 
 

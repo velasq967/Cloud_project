@@ -1,0 +1,21 @@
+#!/bin/bash
+# instala docker y levanta rabbitmq en la central
+set -eux
+exec > /var/log/central-bootstrap.log 2>&1
+
+apt-get update
+apt-get install -y ca-certificates curl git
+curl -fsSL https://get.docker.com | sh
+usermod -aG docker ubuntu
+
+cd /home/ubuntu
+git clone --branch "${repo_branch}" "${repo_url}" app
+cd app
+
+cat > .env.central <<ENV
+RABBITMQ_USER=${rabbit_user}
+RABBITMQ_PASSWORD=${rabbit_pass}
+ENV
+chown -R ubuntu:ubuntu /home/ubuntu/app
+
+docker compose --env-file .env.central -f infrastructure/compose/compose.central.yml up -d
