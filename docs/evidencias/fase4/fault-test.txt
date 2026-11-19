@@ -1,0 +1,20 @@
+bash scripts/fault-test-wh002.sh
+
+==> 1. Estado inicial
+WH-001  /health -> 200
+WH-002  /health -> 200
+WH-003  /health -> 200
+
+==> 2. Apagando WH-002 (api + db)
+
+==> 3. WH-002 caida, probando WH-001 y WH-003
+WH-002  /health -> 000
+WH-001  /health -> 200
+WH-001  POST /inventory/movements -> 201
+WH-003  /health -> 200
+WH-003  POST /inventory/movements -> 201
+
+==> 4. Levantando WH-002 otra vez
+WH-002  /health -> 200
+
+OK: WH-001 y WH-003 siguieron funcionando con WH-002 caida

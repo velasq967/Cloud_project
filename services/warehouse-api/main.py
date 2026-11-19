@@ -1,4 +1,6 @@
 import logging
+import os
+import socket
 from contextlib import asynccontextmanager
 
 from app.config import settings
@@ -13,6 +15,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 configure_logging()
 logger = logging.getLogger("warehouse.startup")
+
+# nombre de la replica, sirve para ver el balanceo (fase 5)
+INSTANCE_ID = os.getenv("INSTANCE_ID") or socket.gethostname()
 
 
 @asynccontextmanager
@@ -43,6 +48,12 @@ def create_app() -> FastAPI:
     )
     application.add_middleware(CorrelationIdMiddleware)
 
+    @application.middleware("http")
+    async def instance_header(request, call_next):
+        response = await call_next(request)
+        response.headers["X-Instance-Id"] = INSTANCE_ID
+        return response
+
     application.include_router(health_router)
     application.include_router(products_router)
     application.include_router(inventory_router)
@@ -53,6 +64,7 @@ def create_app() -> FastAPI:
         return {
             "service": settings.SERVICE_NAME,
             "warehouse_id": settings.WAREHOUSE_ID,
+            "instance": INSTANCE_ID,
             "docs": "/docs",
             "health": "/health",
         }

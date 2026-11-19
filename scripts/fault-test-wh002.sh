@@ -4,12 +4,20 @@
 set -uo pipefail
 
 COMPOSE="docker compose --env-file .env -f infrastructure/compose/compose.multi.yml"
-declare -A API=( [WH-001]="http://localhost:8001" [WH-002]="http://localhost:8002" [WH-003]="http://localhost:8003" )
+# sin declare -A porque el bash de mac (3.2) no lo soporta
+api_url() {
+  case "$1" in
+    WH-001) echo "http://localhost:8001" ;;
+    WH-002) echo "http://localhost:8002" ;;
+    WH-003) echo "http://localhost:8003" ;;
+  esac
+}
 
 step() { printf "\n==> %s\n" "$1"; }
 
 check() {
-  local wh="$1" url="${API[$1]}"
+  local wh="$1" url
+  url="$(api_url "$1")"
   local code
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$url/health")"
   printf "%-7s /health -> %s\n" "$wh" "$code"
@@ -17,7 +25,8 @@ check() {
 }
 
 movement() {
-  local wh="$1" url="${API[$1]}"
+  local wh="$1" url
+  url="$(api_url "$1")"
   local code
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 -X POST "$url/inventory/movements" \
     -H 'Content-Type: application/json' \
@@ -30,8 +39,8 @@ movement() {
 step "1. Estado inicial"
 for wh in WH-001 WH-002 WH-003; do check "$wh"; done
 
-step "2. Apagando WH-002 (api + db)"
-$COMPOSE stop wh002-api wh002-db >/dev/null
+step "2. Apagando WH-002 (apis + db)"
+$COMPOSE stop wh002-api-1 wh002-api-2 wh002-api-3 wh002-db >/dev/null
 sleep 2
 
 step "3. WH-002 caida, probando WH-001 y WH-003"
@@ -43,7 +52,7 @@ for wh in WH-001 WH-003; do
 done
 
 step "4. Levantando WH-002 otra vez"
-$COMPOSE start wh002-db wh002-api >/dev/null
+$COMPOSE start wh002-db wh002-api-1 wh002-api-2 wh002-api-3 >/dev/null
 for i in $(seq 1 30); do
   check WH-002 >/dev/null 2>&1 && break
   sleep 2
