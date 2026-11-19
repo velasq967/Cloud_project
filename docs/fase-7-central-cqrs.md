@@ -93,16 +93,28 @@ curl -X POST localhost:8010/global/rebuild           # reconstruir el read model
 
 ### Resultados
 
-> (captura de `make cqrs-test`)
+Medido en un MacBook Air con todo corriendo en Docker.
 
-> (captura de `make load-cqrs`)
+![make cqrs-test](evidencias/fase7/cqrs-test.png)
+
+![make load-cqrs](evidencias/fase7/load-cqrs.png)
 
 | | A: en vivo | B: read model |
 |---|---:|---:|
-| Latencia promedio (`cqrs-test`) | | |
-| p95 con carga (`load-cqrs`) | | |
-| Tiempo hasta reflejar un cambio | inmediato | |
-| Respuesta con WH-002 caída | | |
+| Latencia promedio, 30 requests seguidos (`cqrs-test`) | 11,0 ms | 2,4 ms |
+| Con carga de 50 req/s cada una por 30 s (`load-cqrs`): promedio | 10,94 ms | 8,23 ms |
+| Con carga: mediana | 8,55 ms | 6,76 ms |
+| Con carga: p95 | 17,55 ms | 13,28 ms |
+| Con carga: máximo | 219,7 ms | 153,9 ms |
+| Errores con carga | 0 % | 0 % |
+| Tiempo hasta reflejar un cambio (RECEIPT en WH-003) | inmediato | 3 ms |
+| Con WH-002 caída | HTTP 200 en **1.022 ms**, total 214, `complete: false` | HTTP 200 en **8 ms**, total 414 con las 3 bodegas |
+
+**Qué muestran los números:**
+
+- **Latencia:** B fue unas 4,5 veces más rápida en requests sueltos (2,4 vs 11 ms). Con carga la diferencia es menor (p95 de 13 vs 18 ms), porque aquí todo corre en el mismo computador y la "red" entre la central y las bodegas casi no cuesta nada. En AWS cada bodega estaría en otra máquina y A pagaría la latencia de red real en cada request.
+- **Consistencia:** el evento llegó al read model en 3 ms, tan rápido que la consulta justo después del RECEIPT ya mostraba el valor nuevo. El atraso existe (consistencia eventual), pero en condiciones normales es de milisegundos.
+- **Disponibilidad:** es la diferencia más grande. Con WH-002 caída, B respondió en 8 ms con las 3 bodegas (WH-002 con su último dato conocido). A tardó más de 1 segundo esperando a WH-002 y devolvió un total incompleto (214 en vez de 414), que alguien podría leer como el total real si no revisa `complete`.
 
 ## Comparación
 
