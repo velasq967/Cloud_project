@@ -519,6 +519,17 @@ services:
         condition: service_started
       wh003-api:
         condition: service_healthy
+  
+  batch-job:
+    build:
+      context: ../../services/batch
+    profiles: ["batch"]
+    environment:
+      AWS_REGION: us-east-1
+      S3_BUCKET: warehouse-bucket-para-registros-diarios-22112026
+      WAREHOUSE_URLS: '{"WH-001":"http://wh001-api:8000","WH-002":"http://wh002-lb","WH-003":"http://wh003-api:8000"}'
+    volumes:
+      - ~/.aws:/root/.aws:ro
 volumes:
   central_postgres_data:
   multi_rabbitmq_data:

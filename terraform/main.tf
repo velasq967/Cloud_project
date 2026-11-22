@@ -211,3 +211,12 @@ resource "aws_instance" "warehouse" {
 
   tags = { Name = each.value.id, Role = "warehouse" }
 }
+
+resource "aws_s3_bucket" "warehouse_platform" {
+  bucket = "warehouse-bucket-para-registros-diarios-22112026"
+
+  tags = {
+    Name  = "Warehouse Platform Storage"
+    Phase = "8-S3-Batch"
+  }
+}
