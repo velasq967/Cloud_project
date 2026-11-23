@@ -212,6 +212,8 @@ resource "aws_instance" "warehouse" {
   tags = { Name = each.value.id, Role = "warehouse" }
 }
 
+#s3 bucket
+
 resource "aws_s3_bucket" "warehouse_platform" {
   bucket = "warehouse-bucket-para-registros-diarios-22112026"
 
@@ -219,4 +221,52 @@ resource "aws_s3_bucket" "warehouse_platform" {
     Name  = "Warehouse Platform Storage"
     Phase = "8-S3-Batch"
   }
+}
+
+#lambda
+
+data "aws_caller_identity" "current" {}
+
+#aqui volvemos el handler.py (de services/lambda) en un .zip
+data "archive_file" "lambda_zip" {
+  type        = "zip"
+  source_file = "${path.module}/../services/lambda/handler.py"
+  output_path = "${path.module}/lambda_payload.zip"
+}
+
+resource "aws_lambda_function" "report_processor" {
+  function_name    = "warehouse-report-processor"
+  role             = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/LabRole"
+  handler          = "handler.lambda_handler"
+  runtime          = "python3.12"
+  filename         = data.archive_file.lambda_zip.output_path
+  source_code_hash = data.archive_file.lambda_zip.output_base64sha256
+  timeout          = 30
+
+  tags = {
+    Name  = "Warehouse Report Processor"
+    Phase = "9-Lambda"
+  }
+}
+
+resource "aws_lambda_permission" "allow_s3" {
+  statement_id  = "AllowExecutionFromS3Bucket"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.report_processor.function_name
+  principal     = "s3.amazonaws.com"
+  source_arn    = "arn:aws:s3:::warehouse-equipodestrozachochos245632sva"
+}
+
+# 5. Conectar el disparador (Trigger) del bucket solo para la carpeta reports/
+resource "aws_s3_bucket_notification" "bucket_notification" {
+  bucket = "warehouse-equipodestrozachochos245632sva"
+
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.report_processor.arn
+    events              = ["s3:ObjectCreated:*"]
+    filter_prefix       = "reports/"
+    filter_suffix       = ".json"
+  }
+
+  depends_on = [aws_lambda_permission.allow_s3]
 }
