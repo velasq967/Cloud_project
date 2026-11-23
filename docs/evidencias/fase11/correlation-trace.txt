@@ -1,0 +1,1 @@
+{"timestamp": "2026-11-23T05:34:29.234464+00:00", "level": "INFO", "service": "warehouse-api", "warehouse_id": "WH-001", "logger": "warehouse.request", "message": "request_completed", "correlation_id": "COR-20261123-001", "method": "GET", "path": "/inventory/1", "status_code": 200, "elapsed_ms": 4.6}

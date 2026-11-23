@@ -1,0 +1,115 @@
+1. ESCENARIO
+
+Se evaluo el comportamiento de lectura de inventario (GET /inventory/1) bajo
+estres progresivo en un entorno local contenerizado con Docker Compose,
+comparando cuatro configuraciones para medir el impacto del cache distribuido
+(Redis) y del balanceo de carga horizontal (Nginx + 3 replicas):
+
+- Escenario A: 1 instancia de API (WH-001) + Redis ON
+- Escenario B: 3 instancias de API (WH-002 detras de Nginx) + Redis ON
+- Escenario C: 1 instancia de API (WH-001) + Redis OFF
+- Escenario D: 3 instancias de API (WH-002 detras de Nginx) + Redis OFF
+
+Adicionalmente, se valido la trazabilidad extremo a extremo enviando un
+X-Correlation-ID personalizado (COR-20261123-001) y verificando su registro
+en los logs estructurados en formato JSON.
+
+
+2. CARGA
+Se utilizo Grafana k6 con el script load-tests/k6/phase11-stress.js ejecutando
+un perfil de rampa progresiva de 1 minuto y 10 segundos (4 etapas) hasta un
+maximo de 1.000 usuarios virtuales (VUs) concurrentes:
+
+  - Etapa 1: 0 -> 100 VUs (20s)
+  - Etapa 2: 100 -> 500 VUs (20s)
+  - Etapa 3: 500 -> 1.000 VUs (20s)
+  - Etapa 4: 1.000 -> 0 VUs (10s)
+  - Umbral de exito (threshold): tasa de error HTTP menor al 5%
+    (http_req_failed: rate<0.05)
+
+
+3. ARQUITECTURA
+  - Bodega de 1 instancia (WH-001):
+    k6 -> wh001-api (puerto 8001) -> wh001-redis (opcional) -> wh001-db (PostgreSQL)
+
+  - Bodega escalada (WH-002):
+    k6 -> wh002-lb (Nginx, puerto 8002) -> [wh002-api-1, wh002-api-2, wh002-api-3]
+       -> wh002-redis (opcional) -> wh002-db (PostgreSQL)
+
+
+4. METRICAS
+Se midieron las metricas de rendimiento de la API reportadas por k6:
+  - RPS (Requests Per Second): volumen de peticiones completadas por segundo.
+  - Latencia (Promedio, P50/mediana, P90, P95 y Maxima): tiempos de respuesta HTTP.
+  - Tasa de error (http_req_failed): porcentaje de peticiones fallidas o con timeout.
+  - Trazabilidad: presencia de correlation_id y elapsed_ms en logs JSON.
+
+
+5. RESULTADOS
+Escenario                  | Requests | RPS     | Promedio  | P50      | P95      | Max    | Error Rate   | Umbral (<5%)
+---------------------------|----------|---------|-----------|----------|----------|--------|--------------|-------------
+1 instancia + Redis OFF    | 5.596    | 55.97/s | 4.26 s    | 98.25 ms | 59.99 s  | 60.0 s | 6.89% (386)  | FALLO
+1 instancia + Redis ON     | 27.206   | 388.2/s | 919.70 ms | 677.99ms | 2.65 s   | 3.02 s | 0.00% (0)    | PASO
+3 instancias + Redis OFF   | 30.990   | 442.2/s | 791.85 ms | 683.21ms | 1.92 s   | 2.27 s | 0.00% (0)    | PASO
+3 instancias + Redis ON    | 47.296   | 675.0/s | 478.79 ms | 384.60ms | 1.25 s   | 1.82 s | 0.00% (0)    | PASO
+
+Hallazgos clave:
+  * Impacto de Redis (1 instancia): Activar Redis multiplico el rendimiento
+    casi 7 veces (de 55.97 a 388.20 RPS) y elimino por completo los errores
+    por timeout (de 6.89% a 0.00%).
+  * Impacto del escalamiento horizontal (3 instancias + Redis ON): Frente a
+    1 instancia con Redis, el rendimiento subio un 73.9% (de 388.20 a 675.00
+    RPS) y la latencia P95 se redujo a menos de la mitad (de 2.65 s a 1.25 s).
+  * Efecto combinado: Pasar del peor escenario (1 instancia, Redis OFF) al
+    mejor (3 instancias, Redis ON) incremento el throughput en 12x
+    (de 55.97 a 675.00 RPS).
+
+
+6. CUELLO DE BOTELLA
+  1. Con 1 instancia y Redis OFF:
+     El cuello de botella fue el pool de conexiones y la concurrencia de una
+     sola instancia de API golpeando directamente a PostgreSQL. Al superar
+     ~120 VUs (segundo 20), la instancia se bloqueo esperando conexiones y
+     consultas SQL, congelando las iteraciones durante 30 segundos y
+     provocando 386 timeouts de 60 segundos (640 iteraciones interrumpidas).
+
+  2. Con 3 instancias y Redis ON:
+     Al eliminar el cuello de botella de PostgreSQL, el limite paso a ser la
+     CPU local compartida en una misma maquina ejecutando simultaneamente los
+     contenedores de Docker (3 APIs, Nginx, Redis, PostgreSQL) y el propio
+     generador de carga k6.
+
+
+7. HIPOTESIS
+  - Hipotesis 1 (validada): Desactivar Redis bajo alta concurrencia satura
+    rapidamente una sola instancia de API debido al costo de I/O y gestion de
+    conexiones hacia PostgreSQL.
+  - Hipotesis 2 (validada): Escalar horizontalmente a 3 replicas detras de
+    Nginx distribuye las conexiones y evita el colapso incluso sin cache, pero
+    combinar Redis + 3 replicas es necesario para sostener alta carga con
+    latencias bajas.
+
+
+8. EVIDENCIA
+  - Trazabilidad (docs/evidencias/fase11/correlation-trace.txt):
+    {"timestamp": "2026-11-23T05:34:29.234464+00:00", "level": "INFO", "service": "warehouse-api", "warehouse_id": "WH-001", "logger": "warehouse.request", "message": "request_completed", "correlation_id": "COR-20261123-001", "method": "GET", "path": "/inventory/1", "status_code": 200, "elapsed_ms": 4.6}
+
+  - Archivos de resultados de k6 guardados en docs/evidencias/fase11/:
+    * 1-instancia-redis-off.txt
+    * 1-instancia-redis-on.txt
+    * 3-instancias-redis-off.txt
+    * 3-instancias-redis-on.txt
+
+
+9. PROPUESTA DE MEJORA
+  1. Separar el generador de carga y los nodos en AWS EC2: Ejecutar k6 desde
+     una maquina distinta a los servidores de bodega para que la CPU de la
+     prueba no compita con las APIs.
+  2. Ajustar el pool de conexiones y workers de Uvicorn/Gunicorn: Configurar
+     multiples workers por contenedor y un connection pooler (como PgBouncer)
+     frente a PostgreSQL para evitar bloqueos cuando Redis este desactivado o
+     en frio.
+  3. Auto Scaling basado en metricas: En produccion en AWS, escalar
+     automaticamente el numero de instancias de cada bodega segun CPU o
+     latencia P95, permitiendo que bodegas de alto trafico (como WH-002)
+     escalen sin sobredimensionar bodegas de baja actividad (WH-001, WH-003).
