@@ -13,10 +13,15 @@ provider "aws" {
 
 # una EC2 por bodega + una central con rabbitmq
 
+data "aws_caller_identity" "current" {}
+
 locals {
   warehouses = {
     for wh in var.warehouses : wh.id => wh
   }
+
+  # Bucket unico por cuenta. Se puede sobreescribir con s3_bucket_name.
+  s3_bucket_name = var.s3_bucket_name != "" ? var.s3_bucket_name : "warehouse-platform-${data.aws_caller_identity.current.account_id}"
 }
 
 data "aws_ami" "ubuntu" {
@@ -172,10 +177,10 @@ resource "aws_instance" "central" {
   iam_instance_profile   = var.instance_profile
 
   user_data = templatefile("${path.module}/user_data/central.sh.tftpl", {
-    repo_url     = var.repo_url
-    repo_branch  = var.repo_branch
-    rabbit_user  = var.rabbitmq_user
-    rabbit_pass  = var.rabbitmq_password
+    repo_url    = var.repo_url
+    repo_branch = var.repo_branch
+    rabbit_user = var.rabbitmq_user
+    rabbit_pass = var.rabbitmq_password
   })
 
   root_block_device {
@@ -215,7 +220,7 @@ resource "aws_instance" "warehouse" {
 #s3 bucket
 
 resource "aws_s3_bucket" "warehouse_platform" {
-  bucket = "warehouse-bucket-para-registros-diarios-22112026"
+  bucket = local.s3_bucket_name
 
   tags = {
     Name  = "Warehouse Platform Storage"
@@ -224,8 +229,6 @@ resource "aws_s3_bucket" "warehouse_platform" {
 }
 
 #lambda
-
-data "aws_caller_identity" "current" {}
 
 #aqui volvemos el handler.py (de services/lambda) en un .zip
 data "archive_file" "lambda_zip" {
@@ -236,7 +239,7 @@ data "archive_file" "lambda_zip" {
 
 resource "aws_lambda_function" "report_processor" {
   function_name    = "warehouse-report-processor"
-  role             = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/LabRole"
+  role             = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.lambda_role_name}"
   handler          = "handler.lambda_handler"
   runtime          = "python3.12"
   filename         = data.archive_file.lambda_zip.output_path
@@ -254,12 +257,12 @@ resource "aws_lambda_permission" "allow_s3" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.report_processor.function_name
   principal     = "s3.amazonaws.com"
-  source_arn    = "arn:aws:s3:::warehouse-equipodestrozachochos245632sva"
+  source_arn    = aws_s3_bucket.warehouse_platform.arn
 }
 
 # 5. Conectar el disparador (Trigger) del bucket solo para la carpeta reports/
 resource "aws_s3_bucket_notification" "bucket_notification" {
-  bucket = "warehouse-equipodestrozachochos245632sva"
+  bucket = aws_s3_bucket.warehouse_platform.id
 
   lambda_function {
     lambda_function_arn = aws_lambda_function.report_processor.arn

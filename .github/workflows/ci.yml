@@ -20,6 +20,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r services/warehouse-api/requirements.txt
+          pip install -r services/workers/requirements.txt
+          pip install -r services/central/requirements.txt
+          pip install -r services/batch/requirements.txt
+          pip install -r services/lambda/requirements.txt
           pip install -e libs/common
 
       - name: Lint
@@ -43,3 +47,9 @@ jobs:
 
       - name: Build Central
         run: docker build -f services/central/Dockerfile -t warehouse-central:ci .
+
+      - name: Build Workers
+        run: docker build -f services/workers/Dockerfile -t warehouse-workers:ci .
+
+      - name: Build Batch
+        run: docker build -f services/batch/Dockerfile -t warehouse-batch:ci services/batch

@@ -1,0 +1,62 @@
+from app.database import SessionLocal
+from app.modules.outbox.models import OutboxEventEntity
+from app.modules.outbox.service import OutboxService
+
+
+def movement(client, product_id, quantity=10):
+    response = client.post(
+        "/inventory/movements",
+        json={
+            "product_id": product_id,
+            "type": "RECEIPT",
+            "quantity": quantity,
+            "reference": "OUTBOX-TEST",
+        },
+    )
+    assert response.status_code == 201, response.text
+
+
+def test_movement_creates_outbox_events(client, product):
+    movement(client, product["id"])
+
+    with SessionLocal() as db:
+        rows = db.query(OutboxEventEntity).order_by(OutboxEventEntity.id).all()
+        assert len(rows) == 2
+        assert {row.event_type for row in rows} == {
+            "INVENTORY_MOVEMENT_REGISTERED",
+            "INVENTORY_UPDATED",
+        }
+        assert all(row.event_id.startswith("EVT-") for row in rows)
+        assert all(row.payload["payload"]["sku"] == product["sku"] for row in rows if row.event_type == "INVENTORY_UPDATED")
+
+
+def test_publish_pending_marks_events_as_published(client, product, monkeypatch):
+    movement(client, product["id"])
+
+    with SessionLocal() as db:
+        service = OutboxService(db)
+        monkeypatch.setattr(
+            "app.modules.outbox.service.publisher.publish_event",
+            lambda event, routing_key: True,
+        )
+        published = service.publish_pending()
+        assert published == 2
+        rows = db.query(OutboxEventEntity).all()
+        assert all(row.published_at is not None for row in rows)
+        assert all(row.attempts == 2 for row in rows)
+
+
+def test_publish_pending_leaves_events_pending_when_rabbit_fails(client, product, monkeypatch):
+    movement(client, product["id"])
+
+    with SessionLocal() as db:
+        service = OutboxService(db)
+        monkeypatch.setattr(
+            "app.modules.outbox.service.publisher.publish_event",
+            lambda event, routing_key: False,
+        )
+        published = service.publish_pending()
+        assert published == 0
+        rows = db.query(OutboxEventEntity).all()
+        assert all(row.published_at is None for row in rows)
+        assert all(row.last_error == "publish_failed" for row in rows)

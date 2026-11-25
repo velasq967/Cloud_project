@@ -63,9 +63,11 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-warehouse}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-warehouse_pass}
+      RABBITMQ_ENABLED_PLUGINS: "rabbitmq_management,rabbitmq_prometheus"
     ports:
       - "${RABBITMQ_PORT:-5672}:5672"
       - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+      - "${RABBITMQ_PROMETHEUS_PORT:-15692}:15692"
     volumes:
       - multi_rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -154,6 +156,23 @@ services:
     <<: *worker-build
     container_name: wh001-report-worker
     command: ["python", "-m", "report_worker.main"]
+    environment:
+      WAREHOUSE_ID: WH-001
+      DATABASE_URL: postgresql://${POSTGRES_USER:-warehouse_user}:${POSTGRES_PASSWORD:-warehouse_pass}@wh001-db:5432/${POSTGRES_DB:-warehouse_db}
+      REDIS_URL: redis://wh001-redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-warehouse}:${RABBITMQ_PASSWORD:-warehouse_pass}@rabbitmq:5672/%2F
+      RABBITMQ_EXCHANGE: warehouse.events
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      wh001-api:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  wh001-outbox-worker:
+    <<: *worker-build
+    container_name: wh001-outbox-worker
+    command: ["python", "-m", "outbox_worker.main"]
     environment:
       WAREHOUSE_ID: WH-001
       DATABASE_URL: postgresql://${POSTGRES_USER:-warehouse_user}:${POSTGRES_PASSWORD:-warehouse_pass}@wh001-db:5432/${POSTGRES_DB:-warehouse_db}
@@ -334,6 +353,23 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  wh002-outbox-worker:
+    <<: *worker-build
+    container_name: wh002-outbox-worker
+    command: ["python", "-m", "outbox_worker.main"]
+    environment:
+      WAREHOUSE_ID: WH-002
+      DATABASE_URL: postgresql://${POSTGRES_USER:-warehouse_user}:${POSTGRES_PASSWORD:-warehouse_pass}@wh002-db:5432/${POSTGRES_DB:-warehouse_db}
+      REDIS_URL: redis://wh002-redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-warehouse}:${RABBITMQ_PASSWORD:-warehouse_pass}@rabbitmq:5672/%2F
+      RABBITMQ_EXCHANGE: warehouse.events
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      wh002-api-1:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
   wh002-frontend:
     <<: *frontend-build
     container_name: wh002-frontend
@@ -438,6 +474,23 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  wh003-outbox-worker:
+    <<: *worker-build
+    container_name: wh003-outbox-worker
+    command: ["python", "-m", "outbox_worker.main"]
+    environment:
+      WAREHOUSE_ID: WH-003
+      DATABASE_URL: postgresql://${POSTGRES_USER:-warehouse_user}:${POSTGRES_PASSWORD:-warehouse_pass}@wh003-db:5432/${POSTGRES_DB:-warehouse_db}
+      REDIS_URL: redis://wh003-redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-warehouse}:${RABBITMQ_PASSWORD:-warehouse_pass}@rabbitmq:5672/%2F
+      RABBITMQ_EXCHANGE: warehouse.events
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      wh003-api:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
   wh003-frontend:
     <<: *frontend-build
     container_name: wh003-frontend
@@ -520,13 +573,26 @@ services:
       wh003-api:
         condition: service_healthy
   
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: warehouse-prometheus
+    profiles: ["observability"]
+    volumes:
+      - ../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - rabbitmq
+      - central-api
+
   batch-job:
     build:
       context: ../../services/batch
     profiles: ["batch"]
     environment:
-      AWS_REGION: us-east-1
-      S3_BUCKET: warehouse-bucket-para-registros-diarios-22112026
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-warehouse-platform}
       WAREHOUSE_URLS: '{"WH-001":"http://wh001-api:8000","WH-002":"http://wh002-lb","WH-003":"http://wh003-api:8000"}'
     volumes:
       - ~/.aws:/root/.aws:ro
@@ -536,3 +602,4 @@ volumes:
   wh001_postgres_data:
   wh002_postgres_data:
   wh003_postgres_data:
+  prometheus_data:

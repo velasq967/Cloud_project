@@ -6,7 +6,8 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 import httpx
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Response, status
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
@@ -29,6 +30,38 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Warehouse Central - Transferencias", lifespan=lifespan)
+
+CENTRAL_REQUESTS = Counter(
+    "central_http_requests_total",
+    "Requests HTTP de la central",
+    ["method", "path", "status"],
+)
+CENTRAL_LATENCY = Histogram(
+    "central_http_request_duration_seconds",
+    "Duración de requests de la central",
+    ["method", "path"],
+    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0),
+)
+
+
+@app.middleware("http")
+async def central_metrics(request, call_next):
+    started = time.perf_counter()
+    response = await call_next(request)
+    route = request.scope.get("route")
+    path = getattr(route, "path", request.url.path)
+    CENTRAL_REQUESTS.labels(
+        method=request.method, path=path, status=str(response.status_code)
+    ).inc()
+    CENTRAL_LATENCY.labels(method=request.method, path=path).observe(
+        time.perf_counter() - started
+    )
+    return response
+
+
+@app.get("/metrics", include_in_schema=False)
+def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 class TransferCreate(BaseModel):

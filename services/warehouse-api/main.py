@@ -1,11 +1,13 @@
 import logging
 import os
 import socket
+import time
 from contextlib import asynccontextmanager
 
 from app.config import settings
 from app.correlation import CorrelationIdMiddleware
 from app.logging_config import configure_logging
+from app.metrics import HTTP_ERRORS, HTTP_REQUEST_DURATION, HTTP_REQUESTS
 from app.modules.health.health_controller import router as health_router
 from app.modules.inventory.inventory_controller import internal_router as internal_inventory_router
 from app.modules.inventory.inventory_controller import router as inventory_router
@@ -51,8 +53,22 @@ def create_app() -> FastAPI:
     application.add_middleware(CorrelationIdMiddleware)
 
     @application.middleware("http")
-    async def instance_header(request, call_next):
+    async def instance_header_and_metrics(request, call_next):
+        started = time.perf_counter()
         response = await call_next(request)
+        elapsed = time.perf_counter() - started
+
+        route = request.scope.get("route")
+        path = getattr(route, "path", request.url.path)
+        HTTP_REQUESTS.labels(
+            method=request.method,
+            path=path,
+            status=str(response.status_code),
+        ).inc()
+        HTTP_REQUEST_DURATION.labels(method=request.method, path=path).observe(elapsed)
+        if response.status_code >= 500:
+            HTTP_ERRORS.labels(method=request.method, path=path).inc()
+
         response.headers["X-Instance-Id"] = INSTANCE_ID
         return response
 

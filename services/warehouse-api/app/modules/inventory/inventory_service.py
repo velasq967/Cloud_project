@@ -11,8 +11,8 @@ from app.correlation import get_correlation_id
 from app.metrics import INVENTORY_READ_LATENCY
 from app.modules.inventory.inventory_repository import InventoryRepository
 from app.modules.inventory.schemas import InventoryResponse, MovementCreate, MovementType
+from app.modules.outbox.service import OutboxService
 from app.modules.products.products_repository import ProductRepository
-from app.publisher import publisher
 
 logger = logging.getLogger("warehouse.inventory")
 
@@ -158,16 +158,8 @@ class InventoryService:
                 correlation_id=get_correlation_id(),
             )
 
-            # Inventario y movimiento se confirman en la misma transacción.
-            self.db.commit()
-            self.db.refresh(movement)
-
-            # Invalidación síncrona: si el commit fue exitoso, la siguiente
-            # lectura debe venir de PostgreSQL, no de un valor viejo en Redis.
-            cache_client.delete_inventory(movement_in.product_id)
-
-            # Eventos de dominio. Si RabbitMQ está caído, la API no falla:
-            # en Fase 10 se agrega Outbox para publicación confiable.
+            # El evento se guarda en la misma transacción que inventario y
+            # movimiento. Si RabbitMQ cae, el outbox worker lo publica luego.
             correlation_id = get_correlation_id()
             event_payload = {
                 "warehouse_id": settings.WAREHOUSE_ID,
@@ -178,7 +170,8 @@ class InventoryService:
                 "resulting_quantity": new_quantity,
                 "resulting_reserved": new_reserved,
             }
-            publisher.publish_many(
+            outbox = OutboxService(self.db)
+            outbox.enqueue(
                 [
                     (EventTypes.INVENTORY_MOVEMENT_REGISTERED, event_payload),
                     (
@@ -195,6 +188,17 @@ class InventoryService:
                 ],
                 correlation_id,
             )
+
+            # Inventario, movimiento y outbox se confirman juntos.
+            self.db.commit()
+            self.db.refresh(movement)
+
+            # Invalidación síncrona: si el commit fue exitoso, la siguiente
+            # lectura debe venir de PostgreSQL, no de un valor viejo en Redis.
+            cache_client.delete_inventory(movement_in.product_id)
+
+            # Intento inmediato. Si falla, las filas quedan pendientes.
+            outbox.publish_pending()
 
             logger.info(
                 "inventory_movement_processed",

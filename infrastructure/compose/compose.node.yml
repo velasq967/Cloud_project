@@ -114,6 +114,11 @@ services:
     command: ["python", "-m", "report_worker.main"]
     environment: *worker-env
 
+  outbox-worker:
+    <<: [*worker-build, *worker-deps]
+    command: ["python", "-m", "outbox_worker.main"]
+    environment: *worker-env
+
   frontend:
     <<: *frontend-build
     environment:

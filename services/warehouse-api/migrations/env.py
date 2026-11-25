@@ -6,6 +6,7 @@ from app.database import Base
 
 # Importar los modelos registra las tablas en Base.metadata.
 from app.modules.inventory import models as inventory_models  # noqa: F401
+from app.modules.outbox import models as outbox_models  # noqa: F401
 from app.modules.products import models as product_models  # noqa: F401
 from app.modules.reports import models as report_models  # noqa: F401
 from sqlalchemy import engine_from_config, pool

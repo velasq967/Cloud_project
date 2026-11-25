@@ -1,0 +1,36 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: warehouse-apis
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - wh001-api:8000
+          - wh002-lb:80
+          - wh003-api:8000
+          - central-api:8000
+
+  - job_name: warehouse-workers
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - wh001-audit-worker:9100
+          - wh001-cache-worker:9100
+          - wh001-report-worker:9100
+          - wh001-outbox-worker:9100
+          - wh002-audit-worker:9100
+          - wh002-cache-worker:9100
+          - wh002-report-worker:9100
+          - wh002-outbox-worker:9100
+          - wh003-audit-worker:9100
+          - wh003-cache-worker:9100
+          - wh003-report-worker:9100
+          - wh003-outbox-worker:9100
+
+  - job_name: rabbitmq
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - rabbitmq:15692
