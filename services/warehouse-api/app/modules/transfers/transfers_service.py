@@ -9,10 +9,10 @@ from app.cache import cache_client
 from app.config import settings
 from app.correlation import get_correlation_id
 from app.modules.inventory.inventory_repository import InventoryRepository
+from app.modules.outbox.service import OutboxService
 from app.modules.products.products_repository import ProductRepository
 from app.modules.transfers.models import TransferOperationEntity
 from app.modules.transfers.schemas import TransferStepRequest, TransferStepResponse
-from app.publisher import publisher
 
 logger = logging.getLogger("warehouse.transfers")
 
@@ -179,7 +179,11 @@ class TransferStepService:
     def _after_commit(self, product, movement_type, quantity, inventory):
         product_id = product.id
         cache_client.delete_inventory(product_id)
-        publisher.publish_many(
+
+        # Igual que en los movimientos normales, los eventos de una
+        # transferencia pasan por Outbox para no perderse si RabbitMQ cae.
+        outbox = OutboxService(self.db)
+        outbox.enqueue(
             [
                 (
                     EventTypes.INVENTORY_MOVEMENT_REGISTERED,
@@ -197,6 +201,7 @@ class TransferStepService:
                     {
                         "warehouse_id": settings.WAREHOUSE_ID,
                         "product_id": product_id,
+                        # el sku es la llave común entre bodegas (fase 7)
                         "sku": product.sku,
                         "quantity": inventory.quantity,
                         "reserved_quantity": inventory.reserved_quantity,
@@ -205,3 +210,5 @@ class TransferStepService:
             ],
             get_correlation_id(),
         )
+        self.db.commit()
+        outbox.publish_pending()

@@ -73,6 +73,7 @@ services:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-warehouse}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-warehouse_pass}
       RABBITMQ_ENABLED_PLUGINS: "rabbitmq_management,rabbitmq_prometheus"
+      RABBITMQ_ENABLED_PLUGINS_FILE: "/var/lib/rabbitmq/enabled_plugins"
     ports:
       - "${RABBITMQ_PORT:-5672}:5672"
       - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
@@ -82,8 +83,9 @@ services:
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
-      timeout: 5s
+      timeout: 15s
       retries: 12
+      start_period: 60s
 
   api:
     build:
