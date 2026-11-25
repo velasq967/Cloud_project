@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.cache import cache_client
 from app.config import settings
-from app.database import get_db
+from app.database import engine, get_db
+from app.metrics import update_db_pool_metrics
 
 router = APIRouter(tags=["System"])
 logger = logging.getLogger("warehouse.health")
@@ -43,4 +44,5 @@ def health_check(db: Session = Depends(get_db)):
 
 @router.get("/metrics", include_in_schema=False)
 def metrics():
+    update_db_pool_metrics(engine, settings.WAREHOUSE_ID)
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)

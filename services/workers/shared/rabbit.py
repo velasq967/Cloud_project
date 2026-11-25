@@ -7,6 +7,14 @@ from typing import Any
 import pika
 
 from shared.config import settings
+from shared.idempotency import already_processed, mark_processed
+from shared.metrics import (
+    DLQ_MESSAGES,
+    MESSAGE_DURATION,
+    MESSAGES_PROCESSED,
+    RETRIES,
+    start_metrics_server,
+)
 
 logger = logging.getLogger("worker.rabbit")
 
@@ -89,6 +97,36 @@ def declare_topology(channel) -> None:
         )
 
 
+def publish_event(event: dict[str, Any], routing_key: str) -> None:
+    """Publica un evento ya construido. Usado por el outbox worker."""
+    parameters = pika.URLParameters(settings.RABBITMQ_URL)
+    parameters.connection_attempts = 1
+    parameters.retry_delay = 0
+    parameters.socket_timeout = 2
+    connection = pika.BlockingConnection(parameters)
+    try:
+        channel = connection.channel()
+        channel.exchange_declare(
+            exchange=EXCHANGE,
+            exchange_type="topic",
+            durable=True,
+        )
+        channel.basic_publish(
+            exchange=EXCHANGE,
+            routing_key=routing_key,
+            body=json.dumps(event).encode("utf-8"),
+            properties=pika.BasicProperties(
+                content_type="application/json",
+                delivery_mode=2,
+                correlation_id=event.get("correlation_id"),
+                message_id=event.get("event_id"),
+            ),
+        )
+    finally:
+        if connection.is_open:
+            connection.close()
+
+
 def _send_to_dlq(channel, queue: str, body: bytes, reason: str, retry_count: int) -> None:
     dead_queue = dlq_name(queue)
     channel.basic_publish(
@@ -113,16 +151,21 @@ def _send_to_dlq(channel, queue: str, body: bytes, reason: str, retry_count: int
     )
 
 
-def consume(queue: str, handler: Callable[[dict[str, Any]], None]) -> None:
+def consume(
+    queue: str,
+    handler: Callable[[dict[str, Any]], None],
+    consumer: str | None = None,
+) -> None:
+    start_metrics_server()
     connection = connect_with_retry()
     channel = connection.channel()
     channel.basic_qos(prefetch_count=10)
     declare_topology(channel)
 
-    # Registro de event_id ya procesados (idempotencia)
-    processed_event_ids: set[str] = set()
+    consumer_name = consumer or queue
 
     def callback(ch, method, properties, body):
+        started = time.perf_counter()
         headers = dict((properties.headers or {}))
         retry_count = int(headers.get("x-retry-count", 0))
 
@@ -130,30 +173,40 @@ def consume(queue: str, handler: Callable[[dict[str, Any]], None]) -> None:
         try:
             event = json.loads(body)
         except json.JSONDecodeError as exc:
+            MESSAGES_PROCESSED.labels(queue=queue, status="invalid").inc()
+            DLQ_MESSAGES.labels(queue=queue).inc()
             _send_to_dlq(ch, queue, body, f"invalid_json: {exc}", retry_count)
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
 
-        # 2. Idempotencia: ignorar si este event_id ya fue procesado
+        # 2. Idempotencia persistente: si el consumidor ya procesó el evento,
+        #    se ignora aunque el worker se haya reiniciado.
         event_id = event.get("event_id")
-        if event_id and event_id in processed_event_ids:
-            logger.info(
-                "duplicate_event_ignored queue=%s event_id=%s",
-                queue,
-                event_id,
-            )
-            ch.basic_ack(delivery_tag=method.delivery_tag)
-            return
-
-        # 3. Procesar el evento con reintentos (backoff exponencial) y fallback a DLQ
         try:
+            if event_id and already_processed(event_id, consumer_name):
+                MESSAGES_PROCESSED.labels(queue=queue, status="duplicate").inc()
+                logger.info(
+                    "duplicate_event_ignored queue=%s consumer=%s event_id=%s",
+                    queue,
+                    consumer_name,
+                    event_id,
+                )
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                return
+
             handler(event)
             if event_id:
-                processed_event_ids.add(event_id)
+                mark_processed(event_id, consumer_name)
+            MESSAGE_DURATION.labels(queue=queue).observe(
+                time.perf_counter() - started
+            )
+            MESSAGES_PROCESSED.labels(queue=queue, status="success").inc()
             ch.basic_ack(delivery_tag=method.delivery_tag)
         except Exception as exc:
             next_retry = retry_count + 1
             if next_retry <= MAX_RETRIES:
+                RETRIES.labels(queue=queue).inc()
+                MESSAGES_PROCESSED.labels(queue=queue, status="retry").inc()
                 backoff_seconds = 2 ** retry_count  # 1s, 2s, 4s
                 logger.warning(
                     "message_retry queue=%s attempt=%s/%s backoff=%ss error=%s",
@@ -176,6 +229,8 @@ def consume(queue: str, handler: Callable[[dict[str, Any]], None]) -> None:
                 )
                 ch.basic_ack(delivery_tag=method.delivery_tag)
             else:
+                MESSAGES_PROCESSED.labels(queue=queue, status="dlq").inc()
+                DLQ_MESSAGES.labels(queue=queue).inc()
                 _send_to_dlq(ch, queue, body, str(exc), retry_count)
                 ch.basic_ack(delivery_tag=method.delivery_tag)
 

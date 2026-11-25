@@ -61,3 +61,62 @@ CREATE TABLE IF NOT EXISTS inventory_movements (
 CREATE INDEX IF NOT EXISTS ix_movements_product_id ON inventory_movements (product_id);
 CREATE INDEX IF NOT EXISTS ix_movements_warehouse_id ON inventory_movements (warehouse_id);
 CREATE INDEX IF NOT EXISTS ix_movements_created_at ON inventory_movements (created_at);
+
+-- Fase 3: auditoria y reportes
+CREATE TABLE IF NOT EXISTS audit_log (
+    id             SERIAL PRIMARY KEY,
+    event_id       VARCHAR(100) NOT NULL,
+    consumer       VARCHAR(100) NOT NULL,
+    event_type     VARCHAR(100) NOT NULL,
+    warehouse_id   VARCHAR(50) NOT NULL,
+    correlation_id VARCHAR(100),
+    payload        JSON,
+    occurred_at    TIMESTAMPTZ,
+    processed_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_audit_event_consumer UNIQUE (event_id, consumer)
+);
+
+CREATE TABLE IF NOT EXISTS report_jobs (
+    id             VARCHAR(36) PRIMARY KEY,
+    type           VARCHAR(50) NOT NULL,
+    status         VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    requested_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    started_at     TIMESTAMPTZ,
+    finished_at    TIMESTAMPTZ,
+    result         JSON,
+    error          TEXT,
+    correlation_id VARCHAR(100)
+);
+
+-- Fase 6: idempotencia de pasos de transferencia
+CREATE TABLE IF NOT EXISTS transfer_operations (
+    id          SERIAL PRIMARY KEY,
+    transfer_id VARCHAR(50) NOT NULL,
+    step        VARCHAR(20) NOT NULL,
+    product_id  INTEGER NOT NULL,
+    quantity    INTEGER NOT NULL,
+    result      VARCHAR(30) NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_transfer_operation_step UNIQUE (transfer_id, step)
+);
+
+-- Fase 10: outbox e idempotencia de consumidores
+CREATE TABLE IF NOT EXISTS outbox_events (
+    id             SERIAL PRIMARY KEY,
+    event_id       VARCHAR(100) NOT NULL UNIQUE,
+    event_type     VARCHAR(100) NOT NULL,
+    routing_key    VARCHAR(200) NOT NULL,
+    correlation_id VARCHAR(100),
+    payload        JSON NOT NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    published_at   TIMESTAMPTZ,
+    attempts       INTEGER NOT NULL DEFAULT 0,
+    last_error     TEXT
+);
+
+CREATE TABLE IF NOT EXISTS processed_events (
+    event_id     VARCHAR(100) NOT NULL,
+    consumer     VARCHAR(100) NOT NULL,
+    processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (event_id, consumer)
+);

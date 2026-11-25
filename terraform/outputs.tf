@@ -18,6 +18,15 @@ output "rabbitmq_management_url" {
   value = "http://${aws_instance.central.public_ip}:15672"
 }
 
+output "s3_bucket" {
+  value       = aws_s3_bucket.warehouse_platform.bucket
+  description = "Bucket donde el batch sube los reportes y que dispara la Lambda."
+}
+
+output "lambda_function_name" {
+  value = aws_lambda_function.report_processor.function_name
+}
+
 output "warehouses" {
   description = "IP y URLs de cada bodega"
   value = {

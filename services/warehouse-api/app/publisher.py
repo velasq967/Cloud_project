@@ -59,6 +59,50 @@ class EventPublisher:
     ) -> bool:
         return self.publish_many([(event_type, payload)], correlation_id)
 
+    def publish_event(self, event: dict[str, Any], routing_key: str) -> bool:
+        """Publica un evento ya construido (por ejemplo, uno leído del Outbox)."""
+        if not self._available():
+            return False
+
+        connection = None
+        try:
+            connection, channel = self._open_channel()
+            channel.basic_publish(
+                exchange=self.exchange,
+                routing_key=routing_key,
+                body=json.dumps(event).encode("utf-8"),
+                properties=pika.BasicProperties(
+                    content_type="application/json",
+                    delivery_mode=2,
+                    correlation_id=event.get("correlation_id"),
+                    message_id=event.get("event_id"),
+                ),
+            )
+            self._disabled_until = 0.0
+            logger.info(
+                "event_published",
+                extra={
+                    "extra_fields": {
+                        "event_id": event.get("event_id"),
+                        "event_type": event.get("event_type"),
+                        "routing_key": routing_key,
+                        "correlation_id": event.get("correlation_id"),
+                    }
+                },
+            )
+            return True
+        except Exception as exc:
+            self._disabled_until = time.monotonic() + self.cooldown_seconds
+            logger.warning(
+                "event_publish_failed error=%s cooldown_seconds=%s",
+                exc,
+                self.cooldown_seconds,
+            )
+            return False
+        finally:
+            if connection is not None and connection.is_open:
+                connection.close()
+
     def publish_many(
         self,
         events: list[tuple[str, dict[str, Any]]],

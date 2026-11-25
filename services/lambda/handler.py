@@ -5,8 +5,9 @@ from urllib.parse import unquote_plus
 
 import boto3
 
-s3 = boto3.client("s3")
-sns = boto3.client("sns")
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+s3 = boto3.client("s3", region_name=AWS_REGION)
+sns = boto3.client("sns", region_name=AWS_REGION)
 
 # Opcional: si creas un tópico SNS en AWS, pon su ARN en las variables de entorno de la Lambda
 SNS_TOPIC_ARN = os.getenv("SNS_TOPIC_ARN", "")

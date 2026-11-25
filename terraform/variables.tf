@@ -60,3 +60,15 @@ variable "rabbitmq_password" {
   type        = string
   sensitive   = true
 }
+
+variable "s3_bucket_name" {
+  description = "Nombre del bucket de reportes. Vacio = warehouse-platform-<account_id>."
+  type        = string
+  default     = ""
+}
+
+variable "lambda_role_name" {
+  description = "Rol IAM que usa la Lambda. En AWS Academy suele ser LabRole."
+  type        = string
+  default     = "LabRole"
+}
