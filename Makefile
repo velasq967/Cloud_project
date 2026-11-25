@@ -1,4 +1,4 @@
-.PHONY: up down logs test smoke lint build clean up-multi down-multi ps-multi fault-wh002 load-multi clean-multi lb-test wh002-1 wh002-3 load-lb saga-test logs-saga cqrs-test load-cqrs observability batch-run
+.PHONY: up down logs test smoke lint build clean up-multi down-multi ps-multi fault-wh002 load-multi clean-multi lb-test wh002-1 wh002-3 load-lb saga-test logs-saga cqrs-test load-cqrs observability batch-run up-iot logs-iot
 
 COMPOSE = docker compose --env-file .env -f infrastructure/compose/compose.core.yml
 COMPOSE_MULTI = docker compose --env-file .env -f infrastructure/compose/compose.multi.yml
@@ -82,3 +82,10 @@ observability:
 
 batch-run:
 	$(COMPOSE_MULTI) --profile batch run --rm batch-job
+
+# fase 12
+up-iot:
+	$(COMPOSE_MULTI) --profile iot up -d --build
+
+logs-iot:
+	$(COMPOSE_MULTI) --profile iot logs -f iot-ingestion iot-simulator iot-storage-worker iot-alert-worker iot-analytics-worker

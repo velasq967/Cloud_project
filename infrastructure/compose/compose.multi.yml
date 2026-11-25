@@ -588,6 +588,109 @@ services:
       - rabbitmq
       - central-api
 
+  # fase 12: IoT (perfil opcional)
+  mosquitto:
+    build:
+      context: ../..
+      dockerfile: services/mosquitto/Dockerfile
+    container_name: warehouse-mosquitto
+    profiles: ["iot"]
+    ports:
+      - "1883:1883"
+    volumes:
+      - mosquitto_data:/mosquitto/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mosquitto_sub -h 127.0.0.1 -p 1883 -u warehouse -P warehouse_pass -t '$$SYS/broker/uptime' -C 1 -W 3",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  iot-ingestion:
+    build:
+      context: ../..
+      dockerfile: services/iot-ingestion/Dockerfile
+    container_name: warehouse-iot-ingestion
+    profiles: ["iot"]
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      MQTT_USER: warehouse
+      MQTT_PASSWORD: warehouse_pass
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-warehouse}:${RABBITMQ_PASSWORD:-warehouse_pass}@rabbitmq:5672/%2F
+      RABBITMQ_EXCHANGE: warehouse.events
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  iot-simulator:
+    build:
+      context: ../..
+      dockerfile: services/iot-simulator/Dockerfile
+    container_name: warehouse-iot-simulator
+    profiles: ["iot"]
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      MQTT_USER: warehouse
+      MQTT_PASSWORD: warehouse_pass
+      WAREHOUSES: WH-001,WH-002,WH-003
+      INTERVAL_SECONDS: ${IOT_INTERVAL_SECONDS:-5}
+      DB_PATH: /data/simulator_buffer.db
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - iot_sim_data:/data
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+
+  iot-storage-worker:
+    image: warehouse-workers:local
+    container_name: warehouse-iot-storage
+    profiles: ["iot"]
+    command: ["python", "-m", "iot_storage_worker.main"]
+    environment: &iot-worker-env
+      WAREHOUSE_ID: CENTRAL
+      DATABASE_URL: postgresql://${POSTGRES_USER:-warehouse_user}:${POSTGRES_PASSWORD:-warehouse_pass}@central-db:5432/central_db
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-warehouse}:${RABBITMQ_PASSWORD:-warehouse_pass}@rabbitmq:5672/%2F
+      RABBITMQ_EXCHANGE: warehouse.events
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      central-api:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  iot-alert-worker:
+    image: warehouse-workers:local
+    container_name: warehouse-iot-alerts
+    profiles: ["iot"]
+    command: ["python", "-m", "iot_alert_worker.main"]
+    environment: *iot-worker-env
+    depends_on:
+      central-api:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  iot-analytics-worker:
+    image: warehouse-workers:local
+    container_name: warehouse-iot-analytics
+    profiles: ["iot"]
+    command: ["python", "-m", "iot_analytics_worker.main"]
+    environment: *iot-worker-env
+    depends_on:
+      central-api:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
   batch-job:
     build:
       context: ../../services/batch
@@ -605,3 +708,5 @@ volumes:
   wh002_postgres_data:
   wh003_postgres_data:
   prometheus_data:
+  mosquitto_data:
+  iot_sim_data:
