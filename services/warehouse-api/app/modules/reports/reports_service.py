@@ -7,9 +7,9 @@ from warehouse_common.events import EventTypes
 
 from app.config import settings
 from app.correlation import get_correlation_id
+from app.modules.outbox.service import OutboxService
 from app.modules.reports.models import ReportJobEntity
 from app.modules.reports.schemas import ReportCreate, ReportJobResponse
-from app.publisher import publisher
 
 logger = logging.getLogger("warehouse.reports")
 
@@ -40,18 +40,29 @@ class ReportService:
             correlation_id=get_correlation_id(),
         )
         self.db.add(job)
-        self.db.commit()
-        self.db.refresh(job)
+        self.db.flush()
 
-        publisher.publish(
-            EventTypes.REPORT_REQUESTED,
-            {
-                "job_id": job_id,
-                "report_type": payload.type,
-                "warehouse_id": settings.WAREHOUSE_ID,
-            },
+        # El evento va al Outbox en la misma transacción que el job. Antes se
+        # publicaba directo: si RabbitMQ estaba caído, el job quedaba PENDING
+        # para siempre porque el evento se perdía.
+        outbox = OutboxService(self.db)
+        outbox_rows = outbox.enqueue(
+            [
+                (
+                    EventTypes.REPORT_REQUESTED,
+                    {
+                        "job_id": job_id,
+                        "report_type": payload.type,
+                        "warehouse_id": settings.WAREHOUSE_ID,
+                    },
+                )
+            ],
             get_correlation_id(),
         )
+        outbox_ids = [row.id for row in outbox_rows]
+        self.db.commit()
+        outbox.publish_now(outbox_ids)
+        self.db.refresh(job)
 
         logger.info(
             "report_job_created",

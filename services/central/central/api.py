@@ -103,6 +103,48 @@ def health():
         raise HTTPException(status_code=503, detail=f"db: {exc}")
 
 
+async def check_warehouse(client: httpx.AsyncClient, wh: str, url: str) -> dict:
+    """Llama al /health de una bodega. Nunca lanza: una bodega caida es un resultado."""
+    started = time.perf_counter()
+    try:
+        r = await client.get(f"{url}/health")
+        elapsed = round((time.perf_counter() - started) * 1000, 1)
+        data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+        detail = data.get("detail") if isinstance(data.get("detail"), dict) else data
+        return {
+            "warehouse_id": wh,
+            "status": "ok" if r.status_code == 200 else "degraded",
+            "http_status": r.status_code,
+            "database": detail.get("database"),
+            "redis": detail.get("redis"),
+            "elapsed_ms": elapsed,
+        }
+    except httpx.TimeoutException:
+        error = "timeout"
+    except Exception as exc:
+        error = exc.__class__.__name__
+    return {
+        "warehouse_id": wh,
+        "status": "down",
+        "http_status": None,
+        "error": error,
+        "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
+    }
+
+
+async def warehouses_status(urls: dict[str, str], transport=None) -> list[dict]:
+    async with httpx.AsyncClient(timeout=settings.LIVE_TIMEOUT, transport=transport) as client:
+        return list(
+            await asyncio.gather(*(check_warehouse(client, wh, url) for wh, url in urls.items()))
+        )
+
+
+@app.get("/warehouses")
+async def list_warehouses():
+    """Bodegas configuradas y su estado (consulta /health de cada una en paralelo)."""
+    return await warehouses_status(settings.warehouses)
+
+
 @app.post("/transfers", status_code=status.HTTP_202_ACCEPTED)
 def create_transfer(body: TransferCreate):
     whs = settings.warehouses
@@ -195,13 +237,15 @@ def summary(t: Transfer) -> dict:
 
 
 @app.get("/global/inventory")
-def global_inventory_all():
-    """Resumen de todos los sku desde el read model."""
+def global_inventory_all(include_warehouses: bool = False):
+    """Resumen de todos los sku desde el read model.
+    Con include_warehouses=true trae el detalle por bodega."""
     with SessionLocal() as db:
         result = []
         for sku in all_skus(db):
             data = aggregate(sku, rows_for(db, sku), in_transit(db, sku))
-            del data["warehouses"]
+            if not include_warehouses:
+                del data["warehouses"]
             result.append(data)
         return result
 

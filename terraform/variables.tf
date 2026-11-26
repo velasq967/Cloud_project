@@ -26,7 +26,7 @@ variable "instance_profile" {
 }
 
 variable "repo_url" {
-  default = "https://github.com/velasq967/Cloud_proyect.git"
+  default = "https://github.com/velasq967/Cloud_project.git"
 }
 
 variable "repo_branch" {
@@ -64,7 +64,7 @@ variable "rabbitmq_password" {
 variable "s3_bucket_name" {
   description = "Nombre del bucket de reportes. Vacio = warehouse-platform-<account_id>."
   type        = string
-  default     = ""
+  default     = "warehouse-platform-cloudcomputing20262"
 }
 
 variable "lambda_role_name" {

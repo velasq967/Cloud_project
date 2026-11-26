@@ -60,3 +60,39 @@ def test_publish_pending_leaves_events_pending_when_rabbit_fails(client, product
         rows = db.query(OutboxEventEntity).all()
         assert all(row.published_at is None for row in rows)
         assert all(row.last_error == "publish_failed" for row in rows)
+
+
+def test_request_publica_solo_sus_eventos_en_una_conexion(client, product, monkeypatch):
+    """Fase 10: el request no arrastra todo el atraso del outbox."""
+    from app.publisher import publisher
+
+    # 1. RabbitMQ caído: el primer movimiento deja 2 eventos pendientes
+    movement(client, product["id"])
+
+    # 2. RabbitMQ vuelve: el segundo movimiento solo publica sus 2 eventos
+    llamadas = []
+
+    def batch(items):
+        llamadas.append(len(items))
+        return len(items)
+
+    monkeypatch.setattr(publisher, "publish_batch", batch)
+    movement(client, product["id"])
+
+    assert llamadas == [2], "una sola llamada (una conexión) con los 2 eventos del request"
+    with SessionLocal() as db:
+        rows = db.query(OutboxEventEntity).order_by(OutboxEventEntity.id).all()
+        assert len(rows) == 4
+        assert [r.published_at is not None for r in rows] == [False, False, True, True]
+
+
+def test_publicacion_parcial_deja_el_resto_pendiente(client, product, monkeypatch):
+    from app.publisher import publisher
+
+    monkeypatch.setattr(publisher, "publish_batch", lambda items: 1)
+    movement(client, product["id"])
+    with SessionLocal() as db:
+        rows = db.query(OutboxEventEntity).order_by(OutboxEventEntity.id).all()
+        assert rows[0].published_at is not None
+        assert rows[1].published_at is None
+        assert rows[1].last_error == "publish_failed"

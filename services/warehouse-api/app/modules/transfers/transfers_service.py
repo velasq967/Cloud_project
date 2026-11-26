@@ -183,7 +183,7 @@ class TransferStepService:
         # Igual que en los movimientos normales, los eventos de una
         # transferencia pasan por Outbox para no perderse si RabbitMQ cae.
         outbox = OutboxService(self.db)
-        outbox.enqueue(
+        outbox_rows = outbox.enqueue(
             [
                 (
                     EventTypes.INVENTORY_MOVEMENT_REGISTERED,
@@ -210,5 +210,6 @@ class TransferStepService:
             ],
             get_correlation_id(),
         )
+        outbox_ids = [row.id for row in outbox_rows]
         self.db.commit()
-        outbox.publish_pending()
+        outbox.publish_now(outbox_ids)

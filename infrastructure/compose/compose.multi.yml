@@ -1,7 +1,7 @@
 name: warehouse-multi
 
 # Fase 4: 3 bodegas, cada una con su API, postgres y redis. RabbitMQ es compartido.
-# Puertos: WH-001 8001/8081, WH-002 8002/8082 (nginx -> 3 apis), WH-003 8003/8083
+# Puertos: WH-001 8001/8081, WH-002 8002/8082 (nginx -> 3 apis), WH-003 8003/8083, central 8010 (API, Swagger en /docs)
 # make up-multi  (apagar antes compose.core.yml)
 
 x-api-build: &api-build

@@ -20,6 +20,17 @@ locals {
     for wh in var.warehouses : wh.id => wh
   }
 
+  # IP privadas fijas: la central necesita las URL de las bodegas y las bodegas
+  # la IP de RabbitMQ. Fijarlas evita un ciclo entre las dos instancias.
+  # AWS reserva las primeras 4 IP de la subred; se usa .10 para la central y .11+ para bodegas.
+  central_private_ip = cidrhost(var.subnet_cidr, 10)
+  warehouse_private_ips = {
+    for i, wh in var.warehouses : wh.id => cidrhost(var.subnet_cidr, 11 + i)
+  }
+  warehouse_urls = join(",", [
+    for wh in var.warehouses : "${wh.id}=http://${local.warehouse_private_ips[wh.id]}:8000"
+  ])
+
   # Bucket unico por cuenta. Se puede sobreescribir con s3_bucket_name.
   s3_bucket_name = var.s3_bucket_name != "" ? var.s3_bucket_name : "warehouse-platform-${data.aws_caller_identity.current.account_id}"
 }
@@ -149,7 +160,7 @@ resource "aws_security_group" "central" {
   }
 
   ingress {
-    description = "Central API (Fase 7)"
+    description = "Central API y Swagger (/docs)"
     from_port   = 8000
     to_port     = 8000
     protocol    = "tcp"
@@ -175,13 +186,17 @@ resource "aws_instance" "central" {
   vpc_security_group_ids = [aws_security_group.central.id]
   key_name               = var.key_name
   iam_instance_profile   = var.instance_profile
+  private_ip             = local.central_private_ip
 
   user_data = templatefile("${path.module}/user_data/central.sh.tftpl", {
-    repo_url    = var.repo_url
-    repo_branch = var.repo_branch
-    rabbit_user = var.rabbitmq_user
-    rabbit_pass = var.rabbitmq_password
+    repo_url       = var.repo_url
+    repo_branch    = var.repo_branch
+    rabbit_user    = var.rabbitmq_user
+    rabbit_pass    = var.rabbitmq_password
+    warehouse_urls = local.warehouse_urls
   })
+  # user_data solo corre en el primer arranque: si cambia, se recrea la instancia
+  user_data_replace_on_change = true
 
   root_block_device {
     volume_size = 20
@@ -199,13 +214,14 @@ resource "aws_instance" "warehouse" {
   vpc_security_group_ids = [aws_security_group.warehouse.id]
   key_name               = var.key_name
   iam_instance_profile   = var.instance_profile
+  private_ip             = local.warehouse_private_ips[each.key]
 
   user_data = templatefile("${path.module}/user_data/warehouse.sh.tftpl", {
     repo_url       = var.repo_url
     repo_branch    = var.repo_branch
     warehouse_id   = each.value.id
     warehouse_name = each.value.name
-    rabbit_host    = aws_instance.central.private_ip
+    rabbit_host    = local.central_private_ip
     rabbit_user    = var.rabbitmq_user
     rabbit_pass    = var.rabbitmq_password
   })
@@ -219,13 +235,31 @@ resource "aws_instance" "warehouse" {
 
 #s3 bucket
 
-resource "aws_s3_bucket" "warehouse_platform" {
-  bucket = local.s3_bucket_name
-
-  tags = {
-    Name  = "Warehouse Platform Storage"
-    Phase = "8-S3-Batch"
+resource "terraform_data" "s3_bucket" {
+  input = {
+    bucket = local.s3_bucket_name
+    region = var.aws_region
   }
+
+  provisioner "local-exec" {
+    command = "aws s3api create-bucket --bucket ${self.input.bucket} --region ${self.input.region}"
+  }
+
+  provisioner "local-exec" {
+    when       = destroy
+    command    = "aws s3 rb s3://${self.input.bucket} --force --region ${self.input.region}"
+    on_failure = continue
+  }
+}
+
+resource "terraform_data" "s3_bucket_ensure" {
+  triggers_replace = timestamp()
+
+  provisioner "local-exec" {
+    command = "aws s3api create-bucket --bucket ${local.s3_bucket_name} --region ${var.aws_region}"
+  }
+
+  depends_on = [terraform_data.s3_bucket]
 }
 
 #lambda
@@ -257,12 +291,14 @@ resource "aws_lambda_permission" "allow_s3" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.report_processor.function_name
   principal     = "s3.amazonaws.com"
-  source_arn    = aws_s3_bucket.warehouse_platform.arn
+  source_arn    = "arn:aws:s3:::${local.s3_bucket_name}"
+
+  depends_on = [terraform_data.s3_bucket]
 }
 
 # 5. Conectar el disparador (Trigger) del bucket solo para la carpeta reports/
 resource "aws_s3_bucket_notification" "bucket_notification" {
-  bucket = aws_s3_bucket.warehouse_platform.id
+  bucket = local.s3_bucket_name
 
   lambda_function {
     lambda_function_arn = aws_lambda_function.report_processor.arn
@@ -271,5 +307,5 @@ resource "aws_s3_bucket_notification" "bucket_notification" {
     filter_suffix       = ".json"
   }
 
-  depends_on = [aws_lambda_permission.allow_s3]
+  depends_on = [terraform_data.s3_bucket_ensure, aws_lambda_permission.allow_s3]
 }

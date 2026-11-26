@@ -35,3 +35,7 @@ TRANSFER_ROUTING_KEY = "transfer.TRANSFER_REQUESTED"
 # fase 7: el projection worker escucha los INVENTORY_UPDATED de todas las bodegas
 PROJECTION_QUEUE = "central.projection.q"
 PROJECTION_ROUTING_KEY = "warehouse.*.INVENTORY_UPDATED"
+# fase 10: reintentos con espera y DLQ del projection worker
+PROJECTION_RETRY_QUEUE = "central.projection.retry"
+PROJECTION_DLQ = "central.projection.dlq"
+PROJECTION_MAX_ATTEMPTS = 5
