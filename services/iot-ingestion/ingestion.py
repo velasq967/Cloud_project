@@ -65,6 +65,9 @@ def build_iot_event(reading: dict) -> tuple[dict, str]:
         event_type=EventTypes.IOT_READING_RECEIVED,
         source=reading["warehouse_id"],
         payload=reading,
+        # El event_id del sensor es la llave de idempotencia de todo el flujo.
+        # Si se genera uno nuevo aquí, un reenvío del sensor se procesa dos veces.
+        event_id=reading["event_id"],
         correlation_id=reading["event_id"],
         occurred_at=occurred_at,
     )

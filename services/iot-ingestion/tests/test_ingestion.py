@@ -45,5 +45,6 @@ def test_build_event_usa_routing_key_de_la_bodega():
     reading = validate_reading(payload(), "WH-001", "TEMP-001")
     event, routing_key = build_iot_event(reading)
     assert event["event_type"] == "IOT_READING_RECEIVED"
+    assert event["event_id"] == "IOT-WH001-TEMP001-1"
     assert routing_key == "warehouse.WH-001.IOT_READING_RECEIVED"
     assert event["payload"]["sensor_id"] == "TEMP-001"
