@@ -13,6 +13,7 @@ from sqlalchemy import text
 
 from central.config import settings
 from central.database import SessionLocal, init_db
+from central.iot_api import router as iot_router
 from central.messaging import publish_transfer
 from central.models import Transfer, TransferHistory
 from central.projection import aggregate
@@ -62,6 +63,9 @@ async def central_metrics(request, call_next):
 @app.get("/metrics", include_in_schema=False)
 def metrics():
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+app.include_router(iot_router)
 
 
 class TransferCreate(BaseModel):

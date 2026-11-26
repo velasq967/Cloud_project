@@ -14,7 +14,7 @@ Base = declarative_base()
 
 
 def init_db(attempts: int = 30) -> None:
-    from central import models  # noqa: F401  registra las tablas
+    from central import iot_models, models  # noqa: F401  registra las tablas
 
     for attempt in range(1, attempts + 1):
         try:

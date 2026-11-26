@@ -22,6 +22,8 @@ testpaths = [
   "services/central/tests",
   "services/batch/tests",
   "services/lambda/tests",
+  "services/iot-ingestion/tests",
+  "services/iot-simulator/tests",
 ]
 pythonpath = [
   "libs/common",
@@ -30,5 +32,7 @@ pythonpath = [
   "services/central",
   "services/batch",
   "services/lambda",
+  "services/iot-ingestion",
+  "services/iot-simulator",
 ]
 addopts = "-ra"

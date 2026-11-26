@@ -100,6 +100,14 @@ def build_queues(warehouse_id: str = WAREHOUSE_ID) -> dict[str, list[str]]:
 
 QUEUES = build_queues()
 
+# Colas globales de IoT: un solo worker por rol consume lecturas de las
+# 3 bodegas y escribe en central-db.
+IOT_QUEUES = {
+    "iot.storage.q": ["warehouse.*.IOT_READING_RECEIVED"],
+    "iot.alerts.q": ["warehouse.*.IOT_READING_RECEIVED"],
+    "iot.analytics.q": ["warehouse.*.IOT_READING_RECEIVED"],
+}
+
 
 def connect_with_retry(attempts: int = 60, delay: int = 2) -> pika.BlockingConnection:
     last_error: Exception | None = None
@@ -114,7 +122,7 @@ def connect_with_retry(attempts: int = 60, delay: int = 2) -> pika.BlockingConne
     raise RuntimeError(f"RabbitMQ no respondió: {last_error}")
 
 
-def declare_topology(channel) -> None:
+def declare_topology(channel, iot_only: bool = False) -> None:
     channel.exchange_declare(
         exchange=EXCHANGE,
         exchange_type="topic",
@@ -125,7 +133,8 @@ def declare_topology(channel) -> None:
         exchange_type="direct",
         durable=True,
     )
-    for queue, routing_keys in QUEUES.items():
+    queues = IOT_QUEUES if iot_only else QUEUES
+    for queue, routing_keys in queues.items():
         # Cola principal (durable para sobrevivir reinicios)
         channel.queue_declare(queue=queue, durable=True)
         for routing_key in routing_keys:
@@ -341,6 +350,7 @@ def consume(
     queue: str,
     handler: Callable[[dict[str, Any]], None],
     consumer: str | None = None,
+    iot_only: bool = False,
     on_dead_letter: Callable[[dict[str, Any], str], None] | None = None,
 ) -> None:
     start_metrics_server()
@@ -364,7 +374,7 @@ def consume(
             connection = connect_with_retry()
             channel = connection.channel()
             channel.basic_qos(prefetch_count=10)
-            declare_topology(channel)
+            declare_topology(channel, iot_only=iot_only)
             channel.basic_consume(queue=queue, on_message_callback=callback)
             logger.info(
                 "worker_started queue=%s retry=%s dlq=%s",

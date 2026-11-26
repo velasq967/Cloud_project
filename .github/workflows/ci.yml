@@ -24,6 +24,8 @@ jobs:
           pip install -r services/central/requirements.txt
           pip install -r services/batch/requirements.txt
           pip install -r services/lambda/requirements.txt
+          pip install -r services/iot-ingestion/requirements.txt
+          pip install -r services/iot-simulator/requirements.txt
           pip install -e libs/common
 
       - name: Lint
