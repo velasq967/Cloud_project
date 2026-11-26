@@ -252,6 +252,16 @@ resource "terraform_data" "s3_bucket" {
   }
 }
 
+resource "terraform_data" "s3_bucket_ensure" {
+  triggers_replace = timestamp()
+
+  provisioner "local-exec" {
+    command = "aws s3api create-bucket --bucket ${local.s3_bucket_name} --region ${var.aws_region}"
+  }
+
+  depends_on = [terraform_data.s3_bucket]
+}
+
 #lambda
 
 #aqui volvemos el handler.py (de services/lambda) en un .zip
@@ -297,5 +307,5 @@ resource "aws_s3_bucket_notification" "bucket_notification" {
     filter_suffix       = ".json"
   }
 
-  depends_on = [terraform_data.s3_bucket, aws_lambda_permission.allow_s3]
+  depends_on = [terraform_data.s3_bucket_ensure, aws_lambda_permission.allow_s3]
 }

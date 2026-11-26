@@ -64,7 +64,7 @@ variable "rabbitmq_password" {
 variable "s3_bucket_name" {
   description = "Nombre del bucket de reportes. Vacio = warehouse-platform-<account_id>."
   type        = string
-  default     = ""
+  default     = "warehouse-platform-cloudcomputing20262"
 }
 
 variable "lambda_role_name" {
