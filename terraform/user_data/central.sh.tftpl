@@ -1,5 +1,5 @@
 #!/bin/bash
-# instala docker y levanta rabbitmq en la central
+# instala docker y levanta la central: rabbitmq, central-api (Swagger en :8000/docs) y workers
 set -eux
 exec > /var/log/central-bootstrap.log 2>&1
 
@@ -15,7 +15,8 @@ cd app
 cat > .env.central <<ENV
 RABBITMQ_USER=${rabbit_user}
 RABBITMQ_PASSWORD=${rabbit_pass}
+WAREHOUSE_URLS=${warehouse_urls}
 ENV
 chown -R ubuntu:ubuntu /home/ubuntu/app
 
-docker compose --env-file .env.central -f infrastructure/compose/compose.central.yml up -d
+docker compose --env-file .env.central -f infrastructure/compose/compose.central.yml up --build -d

@@ -1,7 +1,22 @@
 name: warehouse-central
 
-# Instancia central (por ahora solo RabbitMQ, en fase 7 se agrega central-api)
-# docker compose --env-file .env.central -f infrastructure/compose/compose.central.yml up -d
+# Instancia central (AWS): RabbitMQ + orquestador de transferencias (fase 6)
+# y read model (fase 7). La API central queda en el puerto 8000 con Swagger en /docs.
+#
+#   docker compose --env-file .env.central -f infrastructure/compose/compose.central.yml up --build -d
+#
+# .env.central necesita:
+#   RABBITMQ_USER, RABBITMQ_PASSWORD
+#   WAREHOUSE_URLS=WH-001=http://10.0.1.11:8000,WH-002=http://10.0.1.12:8000,...
+#   (Terraform lo genera solo con las IP privadas fijas de cada bodega)
+
+x-central-env: &central-env
+  DATABASE_URL: postgresql://${POSTGRES_USER:-warehouse_user}:${POSTGRES_PASSWORD:-warehouse_pass}@central-db:5432/central_db
+  RABBITMQ_URL: amqp://${RABBITMQ_USER:-warehouse}:${RABBITMQ_PASSWORD:?definir RABBITMQ_PASSWORD}@rabbitmq:5672/%2F
+  RABBITMQ_EXCHANGE: warehouse.events
+  WAREHOUSE_URLS: ${WAREHOUSE_URLS:?definir WAREHOUSE_URLS}
+  REQUEST_TIMEOUT: "3"
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
 services:
   rabbitmq:
@@ -25,5 +40,59 @@ services:
       retries: 12
       start_period: 60s
 
+  central-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-warehouse_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-warehouse_pass}
+      POSTGRES_DB: central_db
+    volumes:
+      - central_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-warehouse_user} -d central_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  central-api:
+    build:
+      context: ../..
+      dockerfile: services/central/Dockerfile
+    image: warehouse-central:local
+    restart: unless-stopped
+    environment: *central-env
+    ports:
+      - "8000:8000" # Swagger: http://<ip-publica-central>:8000/docs
+    depends_on:
+      central-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  transfer-worker:
+    image: warehouse-central:local
+    restart: unless-stopped
+    command: ["python", "-m", "central.worker"]
+    environment: *central-env
+    depends_on:
+      central-api:
+        condition: service_healthy
+
+  projection-worker:
+    image: warehouse-central:local
+    restart: unless-stopped
+    command: ["python", "-m", "central.projection_worker"]
+    environment: *central-env
+    depends_on:
+      central-api:
+        condition: service_healthy
+
 volumes:
   rabbitmq_data:
+  central_postgres_data:

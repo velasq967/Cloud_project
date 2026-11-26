@@ -103,6 +103,50 @@ class EventPublisher:
             if connection is not None and connection.is_open:
                 connection.close()
 
+    def publish_batch(self, items: list[tuple[dict[str, Any], str]]) -> int:
+        """Publica eventos ya construidos usando UNA sola conexión.
+
+        items: lista de (evento, routing_key). Devuelve cuántos se publicaron,
+        en orden; se detiene en el primer fallo (el resto queda en el Outbox).
+        """
+        if not items or not self._available():
+            return 0
+
+        connection = None
+        published = 0
+        try:
+            connection, channel = self._open_channel()
+            for event, routing_key in items:
+                channel.basic_publish(
+                    exchange=self.exchange,
+                    routing_key=routing_key,
+                    body=json.dumps(event).encode("utf-8"),
+                    properties=pika.BasicProperties(
+                        content_type="application/json",
+                        delivery_mode=2,
+                        correlation_id=event.get("correlation_id"),
+                        message_id=event.get("event_id"),
+                    ),
+                )
+                published += 1
+            self._disabled_until = 0.0
+            logger.info(
+                "event_batch_published",
+                extra={"extra_fields": {"count": published}},
+            )
+        except Exception as exc:
+            self._disabled_until = time.monotonic() + self.cooldown_seconds
+            logger.warning(
+                "event_publish_failed published=%s error=%s cooldown_seconds=%s",
+                published,
+                exc,
+                self.cooldown_seconds,
+            )
+        finally:
+            if connection is not None and connection.is_open:
+                connection.close()
+        return published
+
     def publish_many(
         self,
         events: list[tuple[str, dict[str, Any]]],

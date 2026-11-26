@@ -90,6 +90,8 @@ services:
       RABBITMQ_EXCHANGE: warehouse.events
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       SEED_ON_START: ${SEED_ON_START:-true}
+      # permite el experimento "timeout" de la saga (simulate=timeout en POST /transfers)
+      ALLOW_FAULT_INJECTION: ${ALLOW_FAULT_INJECTION:-false}
     ports:
       - "8000:8000"
     depends_on:

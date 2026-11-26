@@ -3,7 +3,7 @@ import logging
 import redis
 from shared.config import settings
 from shared.logging import configure_worker_logging
-from shared.rabbit import consume, queue_name
+from shared.rabbit import NonRetryableError, consume, queue_name
 
 configure_worker_logging("cache-worker")
 logger = logging.getLogger("worker.cache")
@@ -19,6 +19,8 @@ def handle(event: dict) -> None:
     payload = event.get("payload") or {}
     warehouse_id = payload.get("warehouse_id") or event.get("source")
     product_id = payload.get("product_id")
+    if not warehouse_id or product_id is None:
+        raise NonRetryableError("INVENTORY_UPDATED sin warehouse_id o product_id")
     key = f"warehouse:{warehouse_id}:inventory:{product_id}"
 
     redis_client.delete(key)

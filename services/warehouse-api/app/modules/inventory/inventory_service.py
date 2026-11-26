@@ -171,7 +171,7 @@ class InventoryService:
                 "resulting_reserved": new_reserved,
             }
             outbox = OutboxService(self.db)
-            outbox.enqueue(
+            outbox_rows = outbox.enqueue(
                 [
                     (EventTypes.INVENTORY_MOVEMENT_REGISTERED, event_payload),
                     (
@@ -189,6 +189,8 @@ class InventoryService:
                 correlation_id,
             )
 
+            outbox_ids = [row.id for row in outbox_rows]
+
             # Inventario, movimiento y outbox se confirman juntos.
             self.db.commit()
             self.db.refresh(movement)
@@ -197,8 +199,9 @@ class InventoryService:
             # lectura debe venir de PostgreSQL, no de un valor viejo en Redis.
             cache_client.delete_inventory(movement_in.product_id)
 
-            # Intento inmediato. Si falla, las filas quedan pendientes.
-            outbox.publish_pending()
+            # Intento inmediato solo de los eventos de este movimiento, con una
+            # conexión. Si falla, quedan pendientes y los publica el outbox worker.
+            outbox.publish_now(outbox_ids)
 
             logger.info(
                 "inventory_movement_processed",

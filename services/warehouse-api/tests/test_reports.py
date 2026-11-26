@@ -24,3 +24,16 @@ def test_get_unknown_report_job_returns_404(client):
 def test_invalid_report_type_returns_422(client):
     response = client.post("/reports", json={"type": "NO_EXISTE"})
     assert response.status_code == 422
+
+
+def test_report_queda_en_el_outbox_aunque_rabbit_este_caido(client):
+    """Fase 10: antes el evento se perdía y el job quedaba PENDING para siempre."""
+    from app.database import SessionLocal
+    from app.modules.outbox.models import OutboxEventEntity
+
+    created = client.post("/reports", json={"type": "INVENTORY_SNAPSHOT"}).json()
+    with SessionLocal() as db:
+        rows = db.query(OutboxEventEntity).filter_by(event_type="REPORT_REQUESTED").all()
+        assert len(rows) == 1
+        assert rows[0].published_at is None  # pendiente: lo publica el outbox worker
+        assert rows[0].payload["payload"]["job_id"] == created["job_id"]

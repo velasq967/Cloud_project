@@ -5,7 +5,7 @@ from psycopg2.extras import Json
 from shared.config import settings
 from shared.db import get_connection, get_cursor
 from shared.logging import configure_worker_logging
-from shared.rabbit import consume, queue_name
+from shared.rabbit import NonRetryableError, consume, queue_name
 
 configure_worker_logging("report-worker")
 logger = logging.getLogger("worker.report")
@@ -81,9 +81,11 @@ def handle(event: dict) -> None:
     report_type = payload.get("report_type", "INVENTORY_SNAPSHOT")
     warehouse_id = payload.get("warehouse_id") or settings.WAREHOUSE_ID
 
+    # Errores de datos: reintentar no los arregla -> DLQ directo.
     if not job_id:
-        logger.warning("report_event_without_job_id event_id=%s", event.get("event_id"))
-        return
+        raise NonRetryableError("evento REPORT_REQUESTED sin job_id")
+    if report_type not in ("INVENTORY_SNAPSHOT", "MOVEMENTS_EXPORT"):
+        raise NonRetryableError(f"tipo de reporte desconocido: {report_type}")
 
     connection = get_connection()
     try:
@@ -94,9 +96,8 @@ def handle(event: dict) -> None:
             )
             row = cursor.fetchone()
             if not row:
-                logger.warning("report_job_not_found job_id=%s", job_id)
                 connection.rollback()
-                return
+                raise NonRetryableError(f"report job {job_id} no existe")
             if row["status"] == "COMPLETED":
                 logger.info("report_job_already_completed job_id=%s", job_id)
                 connection.rollback()
@@ -121,7 +122,7 @@ def handle(event: dict) -> None:
             cursor.execute(
                 """
                 UPDATE report_jobs
-                SET status = 'COMPLETED', finished_at = NOW(), result = %s
+                SET status = 'COMPLETED', finished_at = NOW(), result = %s, error = NULL
                 WHERE id = %s
                 """,
                 (Json(result), job_id),
@@ -129,25 +130,49 @@ def handle(event: dict) -> None:
         connection.commit()
         logger.info("report_job_completed job_id=%s type=%s", job_id, report_type)
 
+    except NonRetryableError:
+        raise
     except Exception as exc:
+        # Antes el error se marcaba FAILED y se tragaba, así que el reintento
+        # y la DLQ nunca se activaban. Ahora se deja el job en RETRYING y se
+        # relanza: la capa de RabbitMQ decide si reintenta o lo manda a la DLQ.
         connection.rollback()
-        logger.exception("report_job_failed job_id=%s", job_id)
-        try:
-            with get_cursor(connection) as cursor:
-                cursor.execute(
-                    """
-                    UPDATE report_jobs
-                    SET status = 'FAILED', finished_at = NOW(), error = %s
-                    WHERE id = %s
-                    """,
-                    (str(exc), job_id),
-                )
-            connection.commit()
-        except Exception:
-            logger.exception("report_job_failed_to_mark job_id=%s", job_id)
+        logger.warning("report_job_attempt_failed job_id=%s error=%s", job_id, exc)
+        _mark(job_id, "RETRYING", str(exc), connection)
+        raise
     finally:
         connection.close()
 
 
+def _mark(job_id: str, status: str, error: str, connection=None) -> None:
+    """Marca el estado del job sin ocultar el error original si la DB tampoco responde."""
+    own = connection is None
+    try:
+        connection = connection or get_connection()
+        with get_cursor(connection) as cursor:
+            cursor.execute(
+                """
+                UPDATE report_jobs
+                SET status = %s, error = %s,
+                    finished_at = CASE WHEN %s = 'FAILED' THEN NOW() ELSE finished_at END
+                WHERE id = %s AND status <> 'COMPLETED'
+                """,
+                (status, error[:1000], status, job_id),
+            )
+        connection.commit()
+    except Exception:
+        logger.exception("report_job_mark_failed job_id=%s status=%s", job_id, status)
+    finally:
+        if own and connection is not None:
+            connection.close()
+
+
+def on_dead_letter(event: dict, reason: str) -> None:
+    """Se llama cuando el mensaje termina en la DLQ: el job queda FAILED."""
+    job_id = (event.get("payload") or {}).get("job_id")
+    if job_id:
+        _mark(job_id, "FAILED", f"enviado a DLQ: {reason}")
+
+
 if __name__ == "__main__":
-    consume(QUEUE, handle)
+    consume(QUEUE, handle, on_dead_letter=on_dead_letter)

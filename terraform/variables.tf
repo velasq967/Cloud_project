@@ -26,7 +26,7 @@ variable "instance_profile" {
 }
 
 variable "repo_url" {
-  default = "https://github.com/velasq967/Cloud_proyect.git"
+  default = "https://github.com/velasq967/Cloud_project.git"
 }
 
 variable "repo_branch" {

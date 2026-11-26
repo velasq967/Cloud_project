@@ -3,7 +3,7 @@ import logging
 from psycopg2.extras import Json
 from shared.db import get_connection
 from shared.logging import configure_worker_logging
-from shared.rabbit import consume, queue_name
+from shared.rabbit import NonRetryableError, consume, queue_name
 
 configure_worker_logging("audit-worker")
 logger = logging.getLogger("worker.audit")
@@ -19,6 +19,8 @@ def handle(event: dict) -> None:
     warehouse_id = payload.get("warehouse_id") or event.get("source")
     correlation_id = event.get("correlation_id")
     occurred_at = event.get("occurred_at")
+    if not event_id or not event_type:
+        raise NonRetryableError("evento sin event_id o event_type")
 
     connection = get_connection()
     try:

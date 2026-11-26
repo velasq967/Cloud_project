@@ -82,6 +82,15 @@ make load-cqrs     # carga con k6 a las dos alternativas
 
 Inventario global: http://localhost:8010/global/inventory/PROD-001
 
+### API central en AWS
+
+La EC2 central levanta RabbitMQ, central-api, central-db, transfer-worker y projection-worker
+(`infrastructure/compose/compose.central.yml`). Swagger queda en el puerto 8000:
+
+```bash
+terraform output central_api_docs   # http://<ip-publica-central>:8000/docs
+```
+
 ## Estructura
 
 ```text
